@@ -69,7 +69,7 @@ build\Debug\qiuckprompts.exe --console --log-level=trace
 | `--console` | Allocate a console and mirror logs to stdout |
 | `--log-level=trace\|debug\|info\|warn\|error` | Default: `debug` |
 | `--log-file=PATH` | Override log path |
-| `--paste-delay=MS` | Wait after paste before restoring clipboard (default 80) |
+| `--paste-delay=MS` | Wait after paste before restoring clipboard (default 200) |
 | `--self-test` | Headless checks, exit code 0/1 |
 | `--help` | Help text |
 
