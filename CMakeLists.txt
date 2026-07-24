@@ -36,6 +36,7 @@ set(QP_SOURCES
     src/input_sim.cpp
     src/browser.cpp
     src/page_ready.cpp
+    src/title_sample.cpp
     src/workflow.cpp
     src/tray.cpp
     src/util.cpp
@@ -51,6 +52,7 @@ set(QP_HEADERS
     include/input_sim.hpp
     include/browser.hpp
     include/page_ready.hpp
+    include/title_sample.hpp
     include/workflow.hpp
     include/tray.hpp
     include/util.hpp

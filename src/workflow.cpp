@@ -3,6 +3,7 @@
 #include "input_sim.hpp"
 #include "logger.hpp"
 #include "page_ready.hpp"
+#include "title_sample.hpp"
 #include "util.hpp"
 
 namespace qp {
@@ -26,7 +27,6 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
 
     EnsureComInitialized();
 
-    // --- 0) Clear hotkey modifiers ---
     ReleaseModifiers(nullptr);
     WaitModifiersReleased(500);
     if (cfg_.afterModifierReleaseMs > 0) {
@@ -37,6 +37,7 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
     if (!source.foreground) {
         return fail(L"no foreground window to capture from");
     }
+    LogTitleSample(L"workflow_source_editor", source.foreground, source.fgClass);
 
     std::wstring userClip;
     ClipboardReadUnicode(userClip, nullptr);
@@ -47,7 +48,6 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
         }
     };
 
-    // --- 1) Select all + copy from editor ---
     QP_LOG_INFO(L"workflow: select-all + copy from editor");
     if (!SendSelectAll(error)) return fail(error && !error->empty() ? *error : L"Ctrl+A failed");
     if (cfg_.afterSelectAllMs > 0) Sleep(static_cast<DWORD>(cfg_.afterSelectAllMs));
@@ -72,20 +72,20 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
     QP_LOG_DEBUG(L"workflow: payload %zu wchar (prompt %zu + editor %zu)",
                  payload.size(), promptBody.size(), editorText.size());
 
-    // --- 2) Find + activate browser ---
     BrowserTarget browser;
     if (!FindBrowserWindow(cfg_.browserTitleHint, browser, error)) {
         restoreClip();
         return false;
     }
+    LogTitleSample(L"workflow_browser_selected", browser.hwnd, browser.title);
     if (!ActivateBrowser(browser, error)) {
         QP_LOG_WARN(L"workflow: ActivateBrowser weak focus — continuing anyway");
     }
+    LogForegroundTitle(L"workflow_after_activate");
     if (cfg_.afterActivateBrowserMs > 0) {
         Sleep(static_cast<DWORD>(cfg_.afterActivateBrowserMs));
     }
 
-    // --- 3) New tab ---
     QP_LOG_INFO(L"workflow: new tab");
     ReleaseModifiers(nullptr);
     if (!SendNewTab(error)) {
@@ -93,8 +93,8 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
         return fail(error && !error->empty() ? *error : L"Ctrl+T failed");
     }
     if (cfg_.afterNewTabMs > 0) Sleep(static_cast<DWORD>(cfg_.afterNewTabMs));
+    LogTitleSample(L"workflow_after_newtab", browser.hwnd);
 
-    // --- 4) Navigate to AI URL ---
     QP_LOG_INFO(L"workflow: navigate to %s", url.c_str());
     SendFocusOmnibox(nullptr);
     Sleep(40);
@@ -112,15 +112,15 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
         restoreClip();
         return fail(error && !error->empty() ? *error : L"Enter failed");
     }
+    LogTitleSample(L"workflow_after_navigate_enter", browser.hwnd, url);
 
-    // --- 4b) Smart wait: title + UI Automation edit (not a fixed sleep) ---
-    // Re-resolve browser hwnd in case the top-level window changed (rare).
     {
         BrowserTarget b2;
         if (FindBrowserWindow(cfg_.browserTitleHint, b2, nullptr) && b2.hwnd) {
             browser = b2;
         }
     }
+    LogTitleSample(L"workflow_before_page_ready", browser.hwnd);
 
     PageReadyConfig pr;
     pr.browserHwnd = browser.hwnd;
@@ -140,6 +140,8 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
     PageReadyResult ready{};
     std::wstring readyErr;
     const bool isReady = WaitForAiPageReady(pr, ready, &readyErr);
+    LogTitleSample(L"workflow_after_page_ready", browser.hwnd,
+                   isReady ? ready.detail : readyErr);
     if (!isReady) {
         QP_LOG_WARN(L"workflow: page not confirmed ready (%s) waited=%dms title='%s'",
                     readyErr.c_str(), ready.waitedMs, ready.title.c_str());
@@ -149,15 +151,16 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
         }
         QP_LOG_WARN(L"workflow: pasting anyway (pasteEvenIfNotReady=1)");
     } else {
-        QP_LOG_INFO(L"workflow: page ready in %dms via %s edit='%s'",
-                    ready.waitedMs, ready.detail.c_str(), ready.editName.c_str());
+        QP_LOG_INFO(L"workflow: page ready in %dms via %s edit='%s' title='%s'",
+                    ready.waitedMs, ready.detail.c_str(), ready.editName.c_str(),
+                    ready.title.c_str());
     }
 
-    // Ensure browser still foreground before paste
     ActivateBrowser(browser, nullptr);
     Sleep(40);
+    LogForegroundTitle(L"workflow_before_paste");
+    LogTitleSample(L"workflow_before_paste_browser", browser.hwnd, ready.title);
 
-    // --- 5) Paste prompt + editor text into AI input ---
     QP_LOG_INFO(L"workflow: paste payload into AI input");
     ReleaseModifiers(nullptr);
     WaitModifiersReleased(200);
@@ -177,9 +180,11 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
         Sleep(static_cast<DWORD>(cfg_.afterFinalPasteMs));
     }
 
+    LogTitleSample(L"workflow_after_paste", browser.hwnd);
+    LogForegroundTitle(L"workflow_done");
+
     restoreClip();
     QP_LOG_DEBUG(L"workflow: user clipboard restored");
-
     QP_LOG_INFO(L"workflow: DONE SendToAi");
     return true;
 }

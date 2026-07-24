@@ -1,5 +1,6 @@
 #include "page_ready.hpp"
 #include "logger.hpp"
+#include "title_sample.hpp"
 #include "util.hpp"
 
 #include <ole2.h>
@@ -365,7 +366,12 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out,
     bool titleReady = false;
     bool editReady = false;
     std::wstring lastTitle;
+    std::wstring prevLoggedTitle;
     int lastTreeScanMs = -10000;
+    int lastTitleLogMs = -10000;
+
+    // Initial title at wait start
+    LogTitleSample(L"page_ready_start", cfg.browserHwnd, cfg.titleHint);
 
     for (;;) {
         const int elapsed = static_cast<int>(GetTickCount() - start);
@@ -380,6 +386,16 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out,
         lastTitle = WindowTitleOf(cfg.browserHwnd);
         out.title = lastTitle;
         titleReady = TitleLooksReady(lastTitle, cfg.titleHint);
+
+        // Log every title *change*, and at least every ~1s while waiting.
+        if (lastTitle != prevLoggedTitle || elapsed - lastTitleLogMs >= 1000) {
+            wchar_t note[128];
+            swprintf(note, 128, L"t=%dms titleReady=%d hint='%s'",
+                     elapsed, titleReady ? 1 : 0, cfg.titleHint.c_str());
+            LogTitleSample(L"page_ready_poll", cfg.browserHwnd, note);
+            prevLoggedTitle = lastTitle;
+            lastTitleLogMs = elapsed;
+        }
 
         if (titleReady && automation) {
             std::wstring name;
@@ -449,6 +465,7 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out,
         out.detail = L"timeout waiting for page/input";
         QP_LOG_WARN(L"page_ready: TIMEOUT after %dms title='%s' titleReady=%d editReady=%d",
                     out.waitedMs, out.title.c_str(), titleReady ? 1 : 0, editReady ? 1 : 0);
+        LogTitleSample(L"page_ready_timeout", cfg.browserHwnd, out.title);
         if (error) {
             *error = L"Timed out waiting for AI page/input. title='" + out.title + L"'";
         }
@@ -468,6 +485,7 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out,
     QP_LOG_INFO(L"page_ready: READY after %dms (%s) title='%s' edit='%s'",
                 out.waitedMs, out.detail.c_str(), out.title.c_str(),
                 out.editName.c_str());
+    LogTitleSample(L"page_ready_ready", cfg.browserHwnd, out.detail);
 
     if (cfg.settleMs > 0) {
         Sleep(static_cast<DWORD>(cfg.settleMs));

@@ -100,6 +100,8 @@ void TrayIcon::ShowContextMenu() {
 
     AppendMenuW(menu, MF_STRING, IdListHotkeys, L"List hotkeys");
     AppendMenuW(menu, MF_STRING, IdToggleInsertOnly, L"Toggle insert-only mode");
+    AppendMenuW(menu, MF_STRING, IdSampleTitles, L"Sample window titles now");
+    AppendMenuW(menu, MF_STRING, IdOpenTitlesLog, L"Open titles.log");
     AppendMenuW(menu, MF_STRING, IdOpenLog, L"Open log file");
     AppendMenuW(menu, MF_STRING, IdAbout, L"About");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);

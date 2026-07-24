@@ -2,6 +2,7 @@
 #include "logger.hpp"
 #include "input_sim.hpp"
 #include "page_ready.hpp"
+#include "title_sample.hpp"
 #include "version.hpp"
 
 #include <cstdio>
@@ -136,6 +137,10 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
                 binding.templateId.c_str(),
                 ActionKindName(binding.action));
 
+    // Capture titles at the moment the action starts (source editor, etc.)
+    LogForegroundTitle(L"hotkey_fire", binding.hotkey.display);
+    LogBrowserTitleSweep(L"hotkey_fire_sweep");
+
     std::wstring body;
     if (!FindTemplateBody(binding.templateId, body)) {
         QP_LOG_ERROR(L"template not found: %s", binding.templateId.c_str());
@@ -158,6 +163,10 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
         QP_LOG_ERROR(L"action failed for '%s': %s",
                      binding.templateId.c_str(), err.c_str());
     }
+
+    // After workflow: what is focused / browser titles look like now?
+    LogForegroundTitle(L"hotkey_done", binding.templateId);
+    LogBrowserTitleSweep(L"hotkey_done_sweep");
 
     hotkeys_.SetBusy(false);
 }
@@ -191,6 +200,19 @@ void App::OnMenuCommand(UINT cmd) {
             tray_.SetTooltip(tip);
         }
         break;
+    case TrayIcon::IdSampleTitles:
+        QP_LOG_INFO(L"manual title sample requested");
+        LogBrowserTitleSweep(L"tray_sample");
+        break;
+    case TrayIcon::IdOpenTitlesLog: {
+        const std::wstring& p = TitleSampleLogPath();
+        if (!p.empty()) {
+            if (!OpenTextFile(p)) OpenInExplorer(p);
+        } else if (!logPath_.empty()) {
+            OpenInExplorer(logPath_);
+        }
+        break;
+    }
     default:
         break;
     }
@@ -211,7 +233,10 @@ void App::ShowAbout() {
     text += cfg_.forceInsertOnly ? L"insert-only" : L"send-to-AI";
     text += L"\n\nLog: ";
     text += logPath_.empty() ? L"(none)" : logPath_;
-    text += L"\n\nEdit templates/hotkeys/URL in include/config.hpp";
+    text += L"\nTitles: ";
+    text += TitleSampleLogPath().empty() ? L"(none)" : TitleSampleLogPath();
+    text += L"\n\nTray → Sample window titles now  (after opening AI tabs)\n"
+            L"Then open titles.log and look for TITLE_SAMPLE lines.";
 
     MessageBoxW(nullptr, text.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONINFORMATION);
 }
@@ -275,6 +300,13 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
     }
 
     Logger::Instance().Init(logPath_, cfg_.logLevel, cfg_.console);
+
+    // Dedicated title collection file (stable TITLE_SAMPLE lines for grepping).
+    {
+        const std::wstring titlesPath = PathJoin({GetExeDir(), L"logs", L"titles.log"});
+        SetTitleSampleLogPath(titlesPath);
+    }
+
     QP_LOG_INFO(L"=== %s v%s starting ===", QP_APP_DISPLAY_W, Utf8ToWide(QP_VERSION_STRING).c_str());
     QP_LOG_INFO(L"exe=%s", GetExePath().c_str());
     QP_LOG_INFO(L"log=%s level=%s pasteDelayMs=%d insertOnly=%d",
@@ -282,6 +314,7 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
                 Logger::LevelName(cfg_.logLevel),
                 cfg_.pasteDelayMs,
                 cfg_.forceInsertOnly ? 1 : 0);
+    QP_LOG_INFO(L"titles.log=%s  (grep TITLE_SAMPLE)", TitleSampleLogPath().c_str());
     QP_LOG_INFO(L"hotkey trigger=%s releaseTimeoutMs=%d pollMs=%d",
                 HotkeyTriggerModeName(cfg_.hotkeyTrigger),
                 cfg_.hotkeyReleaseTimeoutMs,
@@ -291,6 +324,9 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
                 cfg_.workflow.browserTitleHint.c_str(),
                 cfg_.workflow.pageReadyTimeoutMs,
                 cfg_.workflow.pageReadyUseUia ? 1 : 0);
+
+    // Baseline snapshot at startup (whatever browsers are already open).
+    LogBrowserTitleSweep(L"startup");
 
     EnsureComInitialized();
     injector_.SetPasteDelayMs(cfg_.pasteDelayMs);

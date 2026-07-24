@@ -53,24 +53,38 @@ build\Debug\qiuckprompts.exe --console --log-level=trace
 | `--log-level=...` | trace/debug/info/warn/error |
 | `--ai-url=URL` | Default chat URL |
 | `--browser-hint=TEXT` | Prefer matching window/path (default `Chrome Beta`) |
-| `--navigate-delay=MS` | Wait after opening AI page (default 2800) |
+| `--page-title-hint=TEXT` | Title must contain this (auto from URL if empty) |
+| `--page-ready-timeout=MS` | Max wait for page/input (default 15000) |
+| `--hotkey-on-press` | Fire on key-down (default is on-release) |
 | `--insert-only` | Skip browser; paste template only |
 | `--self-test` | Headless checks |
 
 ## Hotkey hold / release
 
-Default: **fire on release**.
+Default: **fire on release** (`ARMED` → release → `FIRE`).
 
-1. You press `Ctrl+Alt+J` → hotkey is **armed** (nothing runs yet)  
-2. You release the keys → action **fires** (select-all / browser / …)  
-3. While a workflow is running, further hotkeys are ignored (`busy`)
+## Collecting window titles (for future config)
 
-```bat
-qiuckprompts.exe --hotkey-on-press              :: old immediate behaviour
-qiuckprompts.exe --hotkey-release-timeout=5000  :: max wait for key-up
+Every run appends stable `TITLE_SAMPLE` lines to:
+
+- `build\Debug\logs\titles.log`  (easy to mine)
+- main `qiuckprompts.log` as well
+
+**How to collect:**
+
+1. Start the app  
+2. Open meta.ai / Gemini / etc. tabs in Chrome Beta  
+3. Tray → **Sample window titles now** (repeat after each site)  
+4. Or run hotkeys a few times  
+5. Tray → **Open titles.log**
+
+Example line:
+
+```text
+TITLE_SAMPLE ts=... where=page_ready_poll hwnd=... fg=1 class='Chrome_WidgetWin_1' exe='chrome.exe' title='Meta AI - Chrome Beta' note='t=1200ms titleReady=1 hint=Meta'
 ```
 
-Logs: `hotkey: ARMED` → `hotkey: FIRE ... after chord-released`.
+`where=` tags to filter: `startup`, `tray_sample`, `hotkey_fire`, `workflow_after_navigate_enter`, `page_ready_poll`, `page_ready_ready`, `browser_selected`, …
 
 ## Layout
 
@@ -79,6 +93,8 @@ Logs: `hotkey: ARMED` → `hotkey: FIRE ... after chord-released`.
 | `config.hpp` | Templates, hotkeys, workflow timings/URL |
 | `workflow` | Full send-to-AI pipeline |
 | `browser` | Find/activate Chrome Beta |
+| `page_ready` | Title + UIA wait |
+| `title_sample` | `TITLE_SAMPLE` logging → `titles.log` |
 | `input_sim` | Keys, clipboard, focus helpers |
 | `injector` | Insert-only paste path |
 | `hotkeys` / `tray` / `logger` | Shell |

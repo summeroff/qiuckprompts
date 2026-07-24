@@ -1,6 +1,7 @@
 #include "browser.hpp"
 #include "logger.hpp"
 #include "input_sim.hpp"
+#include "title_sample.hpp"
 #include "util.hpp"
 
 #include <psapi.h>
@@ -155,12 +156,17 @@ bool FindBrowserWindow(const std::wstring& titleHint,
         QP_LOG_DEBUG(L"browser candidate score=%d hwnd=%p pid=%lu title='%s' exe='%s'",
                      t.score, t.hwnd, static_cast<unsigned long>(t.pid),
                      t.title.c_str(), t.exePath.c_str());
+        // Stable samples for config mining (every candidate).
+        wchar_t note[64];
+        swprintf(note, 64, L"score=%d", t.score);
+        LogTitleSample(L"browser_candidate", t.hwnd, note);
         if (t.score > best->score) best = &t;
     }
 
     out = *best;
     QP_LOG_INFO(L"browser: selected score=%d hwnd=%p title='%s'",
                 out.score, out.hwnd, out.title.c_str());
+    LogTitleSample(L"browser_selected", out.hwnd, out.exePath);
     return true;
 }
 
