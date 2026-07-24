@@ -50,6 +50,10 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hotkeys_.OnWmHotkey(wParam);
         return 0;
 
+    case WM_TIMER:
+        hotkeys_.OnTimer(wParam);
+        return 0;
+
     case WM_COMMAND:
         OnMenuCommand(static_cast<UINT>(LOWORD(wParam)));
         return 0;
@@ -110,12 +114,22 @@ bool App::InitTray(std::wstring* error) {
 }
 
 bool App::RegisterHotkeys(std::wstring* error) {
+    hotkeys_.SetTriggerMode(cfg_.hotkeyTrigger);
+    hotkeys_.SetReleaseTimeoutMs(cfg_.hotkeyReleaseTimeoutMs);
+    hotkeys_.SetReleasePollMs(cfg_.hotkeyReleasePollMs);
     hotkeys_.SetCallback([this](int id, const HotkeyBinding& b) { OnHotkey(id, b); });
     auto bindings = GetBuiltInBindings();
     return hotkeys_.RegisterAll(hwnd_, std::move(bindings), error);
 }
 
 void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
+    // Re-entrancy guard: SendToAi can take seconds; ignore nested fires.
+    if (hotkeys_.Busy()) {
+        QP_LOG_WARN(L"hotkey: nested fire ignored (%s)", binding.hotkey.display.c_str());
+        return;
+    }
+    hotkeys_.SetBusy(true);
+
     QP_LOG_INFO(L"hotkey fired: %s (%s) -> template '%s' action=%s",
                 binding.hotkey.display.c_str(),
                 binding.label.c_str(),
@@ -125,6 +139,7 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
     std::wstring body;
     if (!FindTemplateBody(binding.templateId, body)) {
         QP_LOG_ERROR(L"template not found: %s", binding.templateId.c_str());
+        hotkeys_.SetBusy(false);
         return;
     }
 
@@ -143,6 +158,8 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
         QP_LOG_ERROR(L"action failed for '%s': %s",
                      binding.templateId.c_str(), err.c_str());
     }
+
+    hotkeys_.SetBusy(false);
 }
 
 void App::OnMenuCommand(UINT cmd) {
@@ -215,6 +232,9 @@ void App::ShowHotkeyList() {
         text += L"(none registered)\n";
     }
     text += L"\nLeft hand: Ctrl+Alt   Right hand: J K L I O";
+    text += L"\nTrigger: ";
+    text += HotkeyTriggerModeName(cfg_.hotkeyTrigger);
+    text += L" (action runs after you let go)";
     if (cfg_.forceInsertOnly) {
         text += L"\n(currently forced insert-only via tray toggle)";
     }
@@ -262,6 +282,10 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
                 Logger::LevelName(cfg_.logLevel),
                 cfg_.pasteDelayMs,
                 cfg_.forceInsertOnly ? 1 : 0);
+    QP_LOG_INFO(L"hotkey trigger=%s releaseTimeoutMs=%d pollMs=%d",
+                HotkeyTriggerModeName(cfg_.hotkeyTrigger),
+                cfg_.hotkeyReleaseTimeoutMs,
+                cfg_.hotkeyReleasePollMs);
     QP_LOG_INFO(L"workflow aiUrl=%s browserHint=%s pageReadyTimeoutMs=%d uia=%d",
                 cfg_.workflow.defaultAiUrl.c_str(),
                 cfg_.workflow.browserTitleHint.c_str(),
@@ -365,6 +389,13 @@ int App::RunSelfTest() {
     // Bindings default to SendToAi
     expect(bindings[0].action == ActionKind::SendToAi, L"default action SendToAi");
     expect(bindings[0].hotkey.vk == static_cast<UINT>('J'), L"first hotkey is J");
+
+    // Trigger mode helpers
+    expect(std::wstring(HotkeyTriggerModeName(HotkeyTriggerMode::OnRelease)) == L"OnRelease",
+           L"trigger mode name");
+    AppConfig ac;
+    expect(ac.hotkeyTrigger == HotkeyTriggerMode::OnRelease, L"default OnRelease");
+    expect(ac.hotkeyReleaseTimeoutMs > 0, L"release timeout default");
 
     // Workflow config defaults
     WorkflowConfig wc;

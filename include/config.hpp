@@ -19,6 +19,22 @@ enum class ActionKind {
     SendToAi = 1,
 };
 
+// When the action actually runs relative to the physical key chord.
+enum class HotkeyTriggerMode {
+    // Fire as soon as RegisterHotKey delivers WM_HOTKEY (keys still down).
+    OnPress = 0,
+    // Arm on press; fire after trigger key + chord modifiers are released (default).
+    OnRelease = 1,
+};
+
+inline const wchar_t* HotkeyTriggerModeName(HotkeyTriggerMode m) {
+    switch (m) {
+    case HotkeyTriggerMode::OnPress:   return L"OnPress";
+    case HotkeyTriggerMode::OnRelease: return L"OnRelease";
+    default:                           return L"?";
+    }
+}
+
 struct HotkeyBinding {
     HotkeySpec hotkey;
     std::wstring templateId;   // matches BuiltInTemplate::id
@@ -147,6 +163,11 @@ struct AppConfig {
     WorkflowConfig workflow;
     // Global override: force InsertTemplate for every hotkey (debug).
     bool forceInsertOnly = false;
+
+    // Hotkey hold/release behaviour.
+    HotkeyTriggerMode hotkeyTrigger = HotkeyTriggerMode::OnRelease;
+    int hotkeyReleaseTimeoutMs = 3000; // max wait for keys to come up
+    int hotkeyReleasePollMs    = 15;
 };
 
 // Supported:
@@ -155,9 +176,14 @@ struct AppConfig {
 //   --log-file=PATH
 //   --paste-delay=MS
 //   --ai-url=URL
-//   --browser-hint=TEXT     (default "Chrome Beta")
-//   --navigate-delay=MS
-//   --insert-only          (skip browser flow; paste template only)
+//   --browser-hint=TEXT
+//   --page-title-hint=TEXT
+//   --page-ready-timeout=MS
+//   --page-ready-min=MS
+//   --no-uia
+//   --insert-only
+//   --hotkey-on-press          (fire immediately; default is on-release)
+//   --hotkey-release-timeout=MS
 //   --self-test
 bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* error = nullptr);
 

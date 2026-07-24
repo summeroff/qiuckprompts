@@ -57,9 +57,20 @@ build\Debug\qiuckprompts.exe --console --log-level=trace
 | `--insert-only` | Skip browser; paste template only |
 | `--self-test` | Headless checks |
 
-## Tray menu
+## Hotkey hold / release
 
-List hotkeys · Toggle insert-only · Open log · About · Exit
+Default: **fire on release**.
+
+1. You press `Ctrl+Alt+J` → hotkey is **armed** (nothing runs yet)  
+2. You release the keys → action **fires** (select-all / browser / …)  
+3. While a workflow is running, further hotkeys are ignored (`busy`)
+
+```bat
+qiuckprompts.exe --hotkey-on-press              :: old immediate behaviour
+qiuckprompts.exe --hotkey-release-timeout=5000  :: max wait for key-up
+```
+
+Logs: `hotkey: ARMED` → `hotkey: FIRE ... after chord-released`.
 
 ## Layout
 

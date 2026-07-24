@@ -50,6 +50,14 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
             cfg.workflow.pageReadyUseUia = false;
             continue;
         }
+        if (arg == L"--hotkey-on-press") {
+            cfg.hotkeyTrigger = HotkeyTriggerMode::OnPress;
+            continue;
+        }
+        if (arg == L"--hotkey-on-release") {
+            cfg.hotkeyTrigger = HotkeyTriggerMode::OnRelease;
+            continue;
+        }
 
         std::wstring v;
         if (TakeEqValue(i, argc, argv, arg, L"--log-level", v)) {
@@ -96,6 +104,14 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         }
         if (TakeEqValue(i, argc, argv, arg, L"--page-ready-min", v)) {
             cfg.workflow.pageReadyMinMs = ClampInt(_wtoi(v.c_str()), 0, 10000);
+            continue;
+        }
+        if (TakeEqValue(i, argc, argv, arg, L"--hotkey-release-timeout", v)) {
+            cfg.hotkeyReleaseTimeoutMs = ClampInt(_wtoi(v.c_str()), 100, 30000);
+            continue;
+        }
+        if (TakeEqValue(i, argc, argv, arg, L"--hotkey-release-poll", v)) {
+            cfg.hotkeyReleasePollMs = ClampInt(_wtoi(v.c_str()), 5, 100);
             continue;
         }
     }
