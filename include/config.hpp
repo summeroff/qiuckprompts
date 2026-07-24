@@ -101,7 +101,7 @@ struct AppConfig {
     std::wstring logPath;                 // empty -> <exe>/logs/qiuckprompts.log
     LogLevel logLevel = LogLevel::Debug;  // verbose by default while developing
     bool console = false;                 // --console
-    int pasteDelayMs = 80;                // clipboard restore delay after Ctrl+V
+    int pasteDelayMs = 200;               // clipboard restore delay after Ctrl+V
 };
 
 // Parse argv into cfg.
