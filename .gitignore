@@ -1,0 +1,38 @@
+# Build
+build/
+out/
+cmake-build-*/
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+.vs/
+
+# Binaries
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.obj
+*.exp
+*.iobj
+*.ipdb
+
+# Logs / local runtime
+logs/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+
+# Local overrides (keep sample templates tracked)
+# config.local.ini
