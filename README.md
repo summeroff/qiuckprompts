@@ -1,109 +1,89 @@
 # QiuckPrompts
 
-Lightweight **Windows 10/11** tray app: global hotkeys insert prepared prompt templates into whatever text field is focused.
+Lightweight **Windows 10/11** tray app: global hotkeys grab text from your editor and drop it into an AI chat with a prepared prompt.
 
-POC / MVP — no third-party libraries. Pure Win32 + C++17. Built to be easy to debug, trace, and extend.
+Pure Win32 + C++17. No third-party libraries. Built to debug, trace, and extend.
 
-## Status
+## What a hotkey does (Send-to-AI)
 
-- [x] System tray icon + context menu  
-- [x] Global hotkeys (`RegisterHotKey`)  
-- [x] Template injection via clipboard swap + `Ctrl+V`  
-- [x] File + `OutputDebugString` logging (DebugView / VS Output)  
-- [x] Hardcoded templates & hotkeys in `include/config.hpp`  
-- [ ] Load config from text file (later — prefer simple INI/`key=value`, no deps)  
-- [ ] Custom tray icon asset  
+1. Release modifiers from the chord  
+2. **Ctrl+A** / **Ctrl+C** in the focused editor  
+3. Activate **Chrome Beta** (fallback: Chrome / Edge)  
+4. **Ctrl+T** new tab → open AI URL (default [meta.ai](https://www.meta.ai/))  
+5. Wait for page → **paste** `prompt + editor text`  
+6. Restore your previous clipboard  
 
-## Default hotkeys (POC)
+Insert-only mode (template paste, no browser) is available via tray toggle or `--insert-only`.
 
-| Hotkey | Template |
-|--------|----------|
-| `Ctrl+Alt+1` | grammar_check |
-| `Ctrl+Alt+2` | fact_check |
-| `Ctrl+Alt+3` | summarize |
-| `Ctrl+Alt+4` | explain_simple |
-| `Ctrl+Alt+5` | code_review |
+## Default hotkeys
 
-Change bindings / prompt text in **`include/config.hpp`** and rebuild.
+Left hand holds **Ctrl+Alt**, right hand presses the letter:
 
-## Build (Visual Studio 2022 + CMake)
+| Hotkey | Action |
+|--------|--------|
+| `Ctrl+Alt+J` | Grammar check → AI |
+| `Ctrl+Alt+K` | Fact check → AI |
+| `Ctrl+Alt+L` | Summarize → AI |
+| `Ctrl+Alt+I` | Explain simply → AI |
+| `Ctrl+Alt+O` | Code review → AI |
 
-From a **x64 Native Tools** prompt, or after `vcvars64.bat`:
+Edit bindings / prompts / AI URL in **`include/config.hpp`**.
+
+## Build
 
 ```bat
+scripts\build.bat
+:: or
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Debug
 ```
 
-Exe: `build\Debug\qiuckprompts.exe`  
-PDB next to it for debugging.
-
-RelWithDebInfo (optimized + symbols):
-
-```bat
-cmake --build build --config RelWithDebInfo
-```
-
-Self-test (headless):
+Exe: `build\Debug\qiuckprompts.exe`
 
 ```bat
 build\Debug\qiuckprompts.exe --self-test
-```
-
-## Run
-
-```bat
-build\Debug\qiuckprompts.exe
 build\Debug\qiuckprompts.exe --console --log-level=trace
 ```
 
-- Lives in the **notification area** (tray).  
-- Log file: `<exe_dir>\logs\qiuckprompts.log`  
-- Single instance only.  
-- Tray menu: List hotkeys / Open log / About / Exit.
-
-### CLI
+## CLI
 
 | Flag | Meaning |
 |------|---------|
-| `--console` | Allocate a console and mirror logs to stdout |
-| `--log-level=trace\|debug\|info\|warn\|error` | Default: `debug` |
-| `--log-file=PATH` | Override log path |
-| `--paste-delay=MS` | Wait after paste before restoring clipboard (default 200) |
-| `--self-test` | Headless checks, exit code 0/1 |
-| `--help` | Help text |
+| `--console` | Live logs |
+| `--log-level=...` | trace/debug/info/warn/error |
+| `--ai-url=URL` | Default chat URL |
+| `--browser-hint=TEXT` | Prefer matching window/path (default `Chrome Beta`) |
+| `--navigate-delay=MS` | Wait after opening AI page (default 2800) |
+| `--insert-only` | Skip browser; paste template only |
+| `--self-test` | Headless checks |
 
-### Debugging tips
+## Tray menu
 
-1. Run under Visual Studio: set debugger working dir to the exe folder; breakpoints in `TextInjector::Inject`, `HotkeyManager::OnWmHotkey`.  
-2. Or attach **DebugView** (Sysinternals) and filter `qiuckprompts` — all levels go to `OutputDebugString`.  
-3. `--console --log-level=trace` for live step traces (clipboard open/set/paste/restore).  
-4. If a hotkey fails to register, another app owns it — check the log and change `GetBuiltInBindings()`.
+List hotkeys · Toggle insert-only · Open log · About · Exit
 
 ## Layout
 
-```
-include/          public headers (config.hpp = POC knobs)
-src/              app, tray, hotkeys, injector, logger, util
-resources/        version.rc, resource.h
-```
-
 | Module | Role |
 |--------|------|
-| `config.hpp` | Built-in templates + hotkey table (edit here) |
-| `hotkeys` | `RegisterHotKey` / `WM_HOTKEY` |
-| `injector` | Save clipboard → set text → `SendInput` Ctrl+V → restore |
-| `tray` | Notify icon + menu |
-| `logger` | Timestamped file + debugger |
-| `app` | Message-only window, wiring, self-test |
+| `config.hpp` | Templates, hotkeys, workflow timings/URL |
+| `workflow` | Full send-to-AI pipeline |
+| `browser` | Find/activate Chrome Beta |
+| `input_sim` | Keys, clipboard, focus helpers |
+| `injector` | Insert-only paste path |
+| `hotkeys` / `tray` / `logger` | Shell |
 
-## Design notes
+## Tuning flaky steps
 
-- **Injection**: clipboard paste is more reliable than per-character `SendInput` for long Unicode prompts. Clipboard is restored after a short delay.  
-- **No UI framework**: message-only HWND + tray.  
-- **Future config file**: when we outgrow compile-time tables, a tiny hand-rolled `key=value` / INI reader is enough — avoid JSON/XML libs unless needed.  
-- Target: **Windows 10 and 11 only** (`WINVER=0x0A00`).
+If paste lands before the AI page is ready, raise navigate delay:
+
+```bat
+qiuckprompts.exe --navigate-delay=4000
+```
+
+Or edit `WorkflowConfig` in `config.hpp`.
+
+Logs: `<exe_dir>\logs\qiuckprompts.log` and DebugView / VS Output.
 
 ## License
 
-Use freely for personal tooling; add a license file when you care.
+Personal tooling — add a license when you care.

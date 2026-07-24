@@ -17,23 +17,35 @@ bool HasFlag(int argc, wchar_t** argv, const wchar_t* flag) {
 }
 
 void PrintHelp() {
-    // Prefer console if present; otherwise MessageBox.
     const wchar_t* help =
-        L"QiuckPrompts — tray hotkey prompt templates\n"
+        L"QiuckPrompts — tray hotkeys → AI chat workflow\n"
         L"\n"
         L"Usage:\n"
         L"  qiuckprompts.exe [options]\n"
         L"\n"
-        L"Options:\n"
-        L"  --console              Allocate console for live logs\n"
-        L"  --log-level=LEVEL      trace|debug|info|warn|error  (default: debug)\n"
-        L"  --log-file=PATH        Override log path\n"
-        L"  --paste-delay=MS       Delay before restoring clipboard (default: 80)\n"
-        L"  --self-test            Run headless checks and exit\n"
-        L"  --help                 Show this help\n"
+        L"Default hotkeys (left Ctrl+Alt, right-hand letter):\n"
+        L"  Ctrl+Alt+J  Grammar check\n"
+        L"  Ctrl+Alt+K  Fact check\n"
+        L"  Ctrl+Alt+L  Summarize\n"
+        L"  Ctrl+Alt+I  Explain simply\n"
+        L"  Ctrl+Alt+O  Code review\n"
         L"\n"
-        L"POC: edit templates/hotkeys in include/config.hpp and rebuild.\n"
-        L"Default hotkeys: Ctrl+Alt+1..5\n";
+        L"Workflow: select-all → copy editor → activate Chrome Beta →\n"
+        L"          new tab → open AI URL → paste prompt + text\n"
+        L"\n"
+        L"Options:\n"
+        L"  --console                 Live logs on a console\n"
+        L"  --log-level=LEVEL         trace|debug|info|warn|error\n"
+        L"  --log-file=PATH           Override log path\n"
+        L"  --paste-delay=MS          Insert-only clipboard restore delay\n"
+        L"  --ai-url=URL              Default AI chat URL (meta.ai)\n"
+        L"  --browser-hint=TEXT       Window/path hint (default: Chrome Beta)\n"
+        L"  --navigate-delay=MS       Wait after opening AI URL (default 2800)\n"
+        L"  --insert-only             Paste template only (no browser flow)\n"
+        L"  --self-test               Headless checks\n"
+        L"  --help                    This help\n"
+        L"\n"
+        L"Edit templates/hotkeys in include/config.hpp and rebuild.\n";
 
     if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole()) {
         FILE* f = nullptr;
@@ -54,7 +66,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         argc = 0;
     }
 
-    // Structured exception-free top level; keep it simple for POC.
     int code = 0;
 
     if (HasFlag(argc, argv, L"--help") || HasFlag(argc, argv, L"-h") ||
@@ -65,7 +76,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     if (HasFlag(argc, argv, L"--self-test")) {
-        // Need a console for self-test output when launched as WIN32 subsystem.
         if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
             AllocConsole();
         }

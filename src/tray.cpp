@@ -24,11 +24,19 @@ bool TrayIcon::Create(HINSTANCE instance, HWND hwnd, const std::wstring& tip,
     nid_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
     nid_.uCallbackMessage = WM_TRAYICON;
 
-    // Prefer custom icon from resources; fall back to app default.
-    nid_.hIcon = LoadIconW(instance_, MAKEINTRESOURCEW(IDI_APPICON));
+    // Prefer LoadImage for proper tray-sized icon from resource.
+    nid_.hIcon = static_cast<HICON>(LoadImageW(
+        instance_, MAKEINTRESOURCEW(IDI_APPICON), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+        LR_DEFAULTCOLOR));
+    if (!nid_.hIcon) {
+        nid_.hIcon = LoadIconW(instance_, MAKEINTRESOURCEW(IDI_APPICON));
+    }
     if (!nid_.hIcon) {
         nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
         QP_LOG_WARN(L"tray: custom icon missing, using IDI_APPLICATION");
+    } else {
+        QP_LOG_DEBUG(L"tray: loaded IDI_APPICON");
     }
 
     wcsncpy_s(nid_.szTip, tip.c_str(), _TRUNCATE);
@@ -91,6 +99,7 @@ void TrayIcon::ShowContextMenu() {
     if (!menu) return;
 
     AppendMenuW(menu, MF_STRING, IdListHotkeys, L"List hotkeys");
+    AppendMenuW(menu, MF_STRING, IdToggleInsertOnly, L"Toggle insert-only mode");
     AppendMenuW(menu, MF_STRING, IdOpenLog, L"Open log file");
     AppendMenuW(menu, MF_STRING, IdAbout, L"About");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);

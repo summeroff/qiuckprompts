@@ -7,6 +7,7 @@
 #include "injector.hpp"
 #include "tray.hpp"
 #include "util.hpp"
+#include "workflow.hpp"
 
 namespace qp {
 
@@ -39,6 +40,7 @@ private:
     AppConfig cfg_;
     HotkeyManager hotkeys_;
     TextInjector injector_;
+    AiWorkflow workflow_{WorkflowConfig{}};
     TrayIcon tray_;
     SingleInstance single_;
     std::wstring logPath_;

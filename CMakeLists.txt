@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(qiuckprompts VERSION 0.1.0 LANGUAGES CXX RC)
+project(qiuckprompts VERSION 0.2.0 LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,6 +33,9 @@ set(QP_SOURCES
     src/config.cpp
     src/hotkeys.cpp
     src/injector.cpp
+    src/input_sim.cpp
+    src/browser.cpp
+    src/workflow.cpp
     src/tray.cpp
     src/util.cpp
     resources/app.rc
@@ -44,6 +47,9 @@ set(QP_HEADERS
     include/config.hpp
     include/hotkeys.hpp
     include/injector.hpp
+    include/input_sim.hpp
+    include/browser.hpp
+    include/workflow.hpp
     include/tray.hpp
     include/util.hpp
     include/version.hpp
@@ -63,9 +69,9 @@ target_link_libraries(qiuckprompts PRIVATE
     gdi32
     advapi32
     ole32
+    psapi
 )
 
-# Version numbers for the .rc FILEVERSION only (string versions are hardcoded in app.rc for RC simplicity)
 set_source_files_properties(resources/app.rc PROPERTIES
     COMPILE_DEFINITIONS "QP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR};QP_VERSION_MINOR=${PROJECT_VERSION_MINOR};QP_VERSION_PATCH=${PROJECT_VERSION_PATCH}"
 )

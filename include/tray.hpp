@@ -13,10 +13,11 @@ public:
     static constexpr UINT WM_TRAYICON = WM_APP + 1;
 
     enum MenuId : UINT {
-        IdExit          = 1001,
-        IdOpenLog       = 1002,
-        IdAbout         = 1003,
-        IdListHotkeys   = 1004,
+        IdExit              = 1001,
+        IdOpenLog           = 1002,
+        IdAbout             = 1003,
+        IdListHotkeys       = 1004,
+        IdToggleInsertOnly  = 1005,
     };
 
     TrayIcon() = default;

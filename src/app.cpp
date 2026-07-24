@@ -1,8 +1,10 @@
 #include "app.hpp"
 #include "logger.hpp"
+#include "input_sim.hpp"
 #include "version.hpp"
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 namespace qp {
@@ -113,10 +115,11 @@ bool App::RegisterHotkeys(std::wstring* error) {
 }
 
 void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
-    QP_LOG_INFO(L"hotkey fired: %s (%s) -> template '%s'",
+    QP_LOG_INFO(L"hotkey fired: %s (%s) -> template '%s' action=%s",
                 binding.hotkey.display.c_str(),
                 binding.label.c_str(),
-                binding.templateId.c_str());
+                binding.templateId.c_str(),
+                ActionKindName(binding.action));
 
     std::wstring body;
     if (!FindTemplateBody(binding.templateId, body)) {
@@ -124,9 +127,19 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
         return;
     }
 
+    const ActionKind action =
+        cfg_.forceInsertOnly ? ActionKind::InsertTemplate : binding.action;
+
     std::wstring err;
-    if (!injector_.Inject(body, &err)) {
-        QP_LOG_ERROR(L"injection failed for '%s': %s",
+    bool ok = false;
+    if (action == ActionKind::SendToAi) {
+        ok = workflow_.Run(body, binding.aiUrl, &err);
+    } else {
+        ok = injector_.Inject(body, &err);
+    }
+
+    if (!ok) {
+        QP_LOG_ERROR(L"action failed for '%s': %s",
                      binding.templateId.c_str(), err.c_str());
     }
 }
@@ -140,7 +153,6 @@ void App::OnMenuCommand(UINT cmd) {
     case TrayIcon::IdOpenLog:
         if (!logPath_.empty()) {
             if (!OpenTextFile(logPath_)) {
-                // Fall back to folder
                 OpenInExplorer(logPath_);
             }
         }
@@ -150,6 +162,16 @@ void App::OnMenuCommand(UINT cmd) {
         break;
     case TrayIcon::IdListHotkeys:
         ShowHotkeyList();
+        break;
+    case TrayIcon::IdToggleInsertOnly:
+        cfg_.forceInsertOnly = !cfg_.forceInsertOnly;
+        QP_LOG_INFO(L"forceInsertOnly=%d", cfg_.forceInsertOnly ? 1 : 0);
+        {
+            std::wstring tip = std::wstring(QP_APP_DISPLAY_W) + L" v" +
+                               Utf8ToWide(QP_VERSION_STRING);
+            if (cfg_.forceInsertOnly) tip += L" [insert-only]";
+            tray_.SetTooltip(tip);
+        }
         break;
     default:
         break;
@@ -161,11 +183,17 @@ void App::ShowAbout() {
     text += QP_APP_DISPLAY_W;
     text += L" v";
     text += Utf8ToWide(QP_VERSION_STRING);
-    text += L"\n\nTray tool: global hotkeys insert prompt templates\n";
-    text += L"into the current text field (clipboard + Ctrl+V).\n\n";
-    text += L"Log: ";
+    text += L"\n\nHotkeys run a Send-to-AI workflow:\n"
+            L"  select-all → copy → Chrome Beta → new tab → AI URL → paste\n\n";
+    text += L"AI URL: ";
+    text += cfg_.workflow.defaultAiUrl;
+    text += L"\nBrowser hint: ";
+    text += cfg_.workflow.browserTitleHint;
+    text += L"\nMode: ";
+    text += cfg_.forceInsertOnly ? L"insert-only" : L"send-to-AI";
+    text += L"\n\nLog: ";
     text += logPath_.empty() ? L"(none)" : logPath_;
-    text += L"\n\nPOC: templates/hotkeys are compiled-in (see config.hpp).";
+    text += L"\n\nEdit templates/hotkeys/URL in include/config.hpp";
 
     MessageBoxW(nullptr, text.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONINFORMATION);
 }
@@ -178,10 +206,16 @@ void App::ShowHotkeyList() {
         text += b.label;
         text += L"  [";
         text += b.templateId;
-        text += L"]\n";
+        text += L"]  ";
+        text += ActionKindName(b.action);
+        text += L"\n";
     }
     if (hotkeys_.Bindings().empty()) {
         text += L"(none registered)\n";
+    }
+    text += L"\nLeft hand: Ctrl+Alt   Right hand: J K L I O";
+    if (cfg_.forceInsertOnly) {
+        text += L"\n(currently forced insert-only via tray toggle)";
     }
     MessageBoxW(nullptr, text.c_str(), L"Hotkeys", MB_OK | MB_ICONINFORMATION);
 }
@@ -222,12 +256,18 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
     Logger::Instance().Init(logPath_, cfg_.logLevel, cfg_.console);
     QP_LOG_INFO(L"=== %s v%s starting ===", QP_APP_DISPLAY_W, Utf8ToWide(QP_VERSION_STRING).c_str());
     QP_LOG_INFO(L"exe=%s", GetExePath().c_str());
-    QP_LOG_INFO(L"log=%s level=%s pasteDelayMs=%d",
+    QP_LOG_INFO(L"log=%s level=%s pasteDelayMs=%d insertOnly=%d",
                 logPath_.c_str(),
                 Logger::LevelName(cfg_.logLevel),
-                cfg_.pasteDelayMs);
+                cfg_.pasteDelayMs,
+                cfg_.forceInsertOnly ? 1 : 0);
+    QP_LOG_INFO(L"workflow aiUrl=%s browserHint=%s navigateDelayMs=%d",
+                cfg_.workflow.defaultAiUrl.c_str(),
+                cfg_.workflow.browserTitleHint.c_str(),
+                cfg_.workflow.afterNavigateMs);
 
     injector_.SetPasteDelayMs(cfg_.pasteDelayMs);
+    workflow_.SetConfig(cfg_.workflow);
 
     if (!CreateMessageWindow(&err)) {
         QP_LOG_ERROR(L"%s", err.c_str());
@@ -256,8 +296,9 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
 
     // Dump bindings at debug level for traceability
     for (const auto& b : hotkeys_.Bindings()) {
-        QP_LOG_DEBUG(L"  binding id=%d %s -> %s",
-                     b.id, b.hotkey.display.c_str(), b.templateId.c_str());
+        QP_LOG_DEBUG(L"  binding id=%d %s -> %s (%s)",
+                     b.id, b.hotkey.display.c_str(), b.templateId.c_str(),
+                     ActionKindName(b.action));
     }
 
     QP_LOG_INFO(L"ready — message loop");
@@ -314,9 +355,27 @@ int App::RunSelfTest() {
     }
 
     // Hotkey display
-    const std::wstring disp = FormatHotkeyDisplay(MOD_CONTROL | MOD_ALT, '1');
+    const std::wstring disp = FormatHotkeyDisplay(MOD_CONTROL | MOD_ALT, 'J');
     expect(disp.find(L"Ctrl") != std::wstring::npos, L"display contains Ctrl");
-    expect(disp.find(L"1") != std::wstring::npos, L"display contains 1");
+    expect(disp.find(L"J") != std::wstring::npos, L"display contains J");
+
+    // Bindings default to SendToAi
+    expect(bindings[0].action == ActionKind::SendToAi, L"default action SendToAi");
+    expect(bindings[0].hotkey.vk == static_cast<UINT>('J'), L"first hotkey is J");
+
+    // Workflow config defaults
+    WorkflowConfig wc;
+    expect(!wc.defaultAiUrl.empty(), L"default AI URL set");
+    expect(!wc.browserTitleHint.empty(), L"browser hint set");
+
+    // input_sim clipboard helpers
+    {
+        const std::wstring sample = L"qiuckprompts-clip-helper-✓";
+        std::wstring err;
+        expect(ClipboardWriteUnicode(sample, &err), L"ClipboardWriteUnicode");
+        std::wstring got;
+        expect(ClipboardReadUnicode(got, &err) && got == sample, L"ClipboardReadUnicode round-trip");
+    }
 
     // Paths
     expect(!GetExeDir().empty(), L"GetExeDir");
