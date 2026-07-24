@@ -1,6 +1,7 @@
 #include "app.hpp"
 #include "logger.hpp"
 #include "input_sim.hpp"
+#include "page_ready.hpp"
 #include "version.hpp"
 
 #include <cstdio>
@@ -261,11 +262,13 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
                 Logger::LevelName(cfg_.logLevel),
                 cfg_.pasteDelayMs,
                 cfg_.forceInsertOnly ? 1 : 0);
-    QP_LOG_INFO(L"workflow aiUrl=%s browserHint=%s navigateDelayMs=%d",
+    QP_LOG_INFO(L"workflow aiUrl=%s browserHint=%s pageReadyTimeoutMs=%d uia=%d",
                 cfg_.workflow.defaultAiUrl.c_str(),
                 cfg_.workflow.browserTitleHint.c_str(),
-                cfg_.workflow.afterNavigateMs);
+                cfg_.workflow.pageReadyTimeoutMs,
+                cfg_.workflow.pageReadyUseUia ? 1 : 0);
 
+    EnsureComInitialized();
     injector_.SetPasteDelayMs(cfg_.pasteDelayMs);
     workflow_.SetConfig(cfg_.workflow);
 
@@ -367,6 +370,15 @@ int App::RunSelfTest() {
     WorkflowConfig wc;
     expect(!wc.defaultAiUrl.empty(), L"default AI URL set");
     expect(!wc.browserTitleHint.empty(), L"browser hint set");
+    expect(wc.pageReadyTimeoutMs > 0, L"pageReadyTimeoutMs > 0");
+
+    // Title hint derivation
+    expect(TitleHintFromUrl(L"https://www.meta.ai/") == L"Meta", L"hint meta.ai");
+    expect(TitleHintFromUrl(L"https://gemini.google.com/app") == L"Gemini", L"hint gemini");
+    expect(TitleHintFromUrl(L"https://chatgpt.com/") == L"ChatGPT", L"hint chatgpt");
+
+    // COM / UIA create (no browser required)
+    expect(EnsureComInitialized(), L"EnsureComInitialized");
 
     // input_sim clipboard helpers
     {

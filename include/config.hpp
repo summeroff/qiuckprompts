@@ -109,18 +109,32 @@ struct WorkflowConfig {
     std::wstring browserTitleHint = L"Chrome Beta";
 
     // Default chat URL when binding.aiUrl is empty.
-    // Lightweight defaults you mentioned: meta.ai / Gemini.
     std::wstring defaultAiUrl = L"https://www.meta.ai/";
 
-    // Timing (ms) — raise if a step is flaky on your machine.
+    // Optional page-title substring to detect navigation (empty => derive from URL).
+    // e.g. L"Meta", L"Gemini", L"ChatGPT"
+    std::wstring pageTitleHint;
+
+    // Timing (ms) for key steps.
     int afterModifierReleaseMs = 40;
     int afterSelectAllMs       = 40;
     int afterCopyMs            = 80;
     int afterActivateBrowserMs = 200;
     int afterNewTabMs          = 250;
     int afterUrlPasteMs        = 80;
-    int afterNavigateMs        = 2800;  // wait for AI page + input focus
     int afterFinalPasteMs      = 250;
+
+    // Smart page-ready wait (replaces fixed 2.8s sleep).
+    // Uses window title + UI Automation to find the chat Edit control.
+    // Chrome web inputs are NOT Win32 HWNDs — only UIA can see them.
+    int pageReadyTimeoutMs = 15000;  // hard stop
+    int pageReadyPollMs    = 150;
+    int pageReadyMinMs     = 500;    // never paste earlier than this after Enter
+    int pageReadySettleMs  = 200;    // brief settle after ready
+    bool pageReadyUseUia   = true;
+
+    // If smart wait times out, still attempt paste (best-effort).
+    bool pasteEvenIfNotReady = true;
 };
 
 // ---- Runtime options (CLI) ------------------------------------------------

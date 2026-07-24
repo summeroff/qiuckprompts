@@ -74,15 +74,20 @@ List hotkeys · Toggle insert-only · Open log · About · Exit
 
 ## Tuning flaky steps
 
-If paste lands before the AI page is ready, raise navigate delay:
+Page ready is **not** a fixed sleep anymore. After opening the AI URL we poll:
+
+1. Tab title left “New Tab” and matches hint (auto from URL: meta.ai → `Meta`)  
+2. **UI Automation** finds a non-omnibox `Edit` (chat box) and focuses it  
+
+Chrome does **not** expose the chat box as a Win32 `HWND` — only a single render surface. UIA is the supported way to “see” the input.
 
 ```bat
-qiuckprompts.exe --navigate-delay=4000
+qiuckprompts.exe --page-ready-timeout=20000
+qiuckprompts.exe --page-title-hint=Meta
+qiuckprompts.exe --no-uia
 ```
 
-Or edit `WorkflowConfig` in `config.hpp`.
-
-Logs: `<exe_dir>\logs\qiuckprompts.log` and DebugView / VS Output.
+Logs: look for `page_ready: READY after Xms` in `<exe_dir>\logs\qiuckprompts.log`.
 
 ## License
 

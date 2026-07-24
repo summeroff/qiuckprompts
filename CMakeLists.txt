@@ -35,6 +35,7 @@ set(QP_SOURCES
     src/injector.cpp
     src/input_sim.cpp
     src/browser.cpp
+    src/page_ready.cpp
     src/workflow.cpp
     src/tray.cpp
     src/util.cpp
@@ -49,6 +50,7 @@ set(QP_HEADERS
     include/injector.hpp
     include/input_sim.hpp
     include/browser.hpp
+    include/page_ready.hpp
     include/workflow.hpp
     include/tray.hpp
     include/util.hpp
@@ -69,7 +71,9 @@ target_link_libraries(qiuckprompts PRIVATE
     gdi32
     advapi32
     ole32
+    oleaut32
     psapi
+    uiautomationcore
 )
 
 set_source_files_properties(resources/app.rc PROPERTIES

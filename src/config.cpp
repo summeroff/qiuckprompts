@@ -22,6 +22,12 @@ bool TakeEqValue(int& i, int argc, wchar_t** argv,
     return false;
 }
 
+int ClampInt(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
 } // namespace
 
 bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* error) {
@@ -38,6 +44,10 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         }
         if (arg == L"--insert-only") {
             cfg.forceInsertOnly = true;
+            continue;
+        }
+        if (arg == L"--no-uia") {
+            cfg.workflow.pageReadyUseUia = false;
             continue;
         }
 
@@ -59,9 +69,7 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
             continue;
         }
         if (TakeEqValue(i, argc, argv, arg, L"--paste-delay", v)) {
-            cfg.pasteDelayMs = _wtoi(v.c_str());
-            if (cfg.pasteDelayMs < 0) cfg.pasteDelayMs = 0;
-            if (cfg.pasteDelayMs > 5000) cfg.pasteDelayMs = 5000;
+            cfg.pasteDelayMs = ClampInt(_wtoi(v.c_str()), 0, 5000);
             continue;
         }
         if (TakeEqValue(i, argc, argv, arg, L"--ai-url", v)) {
@@ -76,10 +84,18 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
             cfg.workflow.browserTitleHint = v;
             continue;
         }
-        if (TakeEqValue(i, argc, argv, arg, L"--navigate-delay", v)) {
-            cfg.workflow.afterNavigateMs = _wtoi(v.c_str());
-            if (cfg.workflow.afterNavigateMs < 0) cfg.workflow.afterNavigateMs = 0;
-            if (cfg.workflow.afterNavigateMs > 60000) cfg.workflow.afterNavigateMs = 60000;
+        if (TakeEqValue(i, argc, argv, arg, L"--page-title-hint", v)) {
+            cfg.workflow.pageTitleHint = v;
+            continue;
+        }
+        // Back-compat alias: --navigate-delay sets page-ready timeout
+        if (TakeEqValue(i, argc, argv, arg, L"--navigate-delay", v) ||
+            TakeEqValue(i, argc, argv, arg, L"--page-ready-timeout", v)) {
+            cfg.workflow.pageReadyTimeoutMs = ClampInt(_wtoi(v.c_str()), 500, 120000);
+            continue;
+        }
+        if (TakeEqValue(i, argc, argv, arg, L"--page-ready-min", v)) {
+            cfg.workflow.pageReadyMinMs = ClampInt(_wtoi(v.c_str()), 0, 10000);
             continue;
         }
     }

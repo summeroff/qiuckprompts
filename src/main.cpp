@@ -40,10 +40,16 @@ void PrintHelp() {
         L"  --paste-delay=MS          Insert-only clipboard restore delay\n"
         L"  --ai-url=URL              Default AI chat URL (meta.ai)\n"
         L"  --browser-hint=TEXT       Window/path hint (default: Chrome Beta)\n"
-        L"  --navigate-delay=MS       Wait after opening AI URL (default 2800)\n"
+        L"  --page-title-hint=TEXT    Page title must contain this (auto from URL)\n"
+        L"  --page-ready-timeout=MS   Max wait for page/input (default 15000)\n"
+        L"  --page-ready-min=MS       Min wait after navigate (default 500)\n"
+        L"  --no-uia                  Disable UI Automation; title-only wait\n"
         L"  --insert-only             Paste template only (no browser flow)\n"
         L"  --self-test               Headless checks\n"
         L"  --help                    This help\n"
+        L"\n"
+        L"Page ready: Chrome inputs are NOT Win32 HWNDs. We wait on tab title\n"
+        L"+ UI Automation Edit control (accessibility tree), then paste.\n"
         L"\n"
         L"Edit templates/hotkeys in include/config.hpp and rebuild.\n";
 

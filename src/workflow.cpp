@@ -2,6 +2,7 @@
 #include "browser.hpp"
 #include "input_sim.hpp"
 #include "logger.hpp"
+#include "page_ready.hpp"
 #include "util.hpp"
 
 namespace qp {
@@ -23,6 +24,8 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
     if (url.empty()) return fail(L"AI URL is empty");
     if (promptBody.empty()) return fail(L"prompt template is empty");
 
+    EnsureComInitialized();
+
     // --- 0) Clear hotkey modifiers ---
     ReleaseModifiers(nullptr);
     WaitModifiersReleased(500);
@@ -30,15 +33,19 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
         Sleep(static_cast<DWORD>(cfg_.afterModifierReleaseMs));
     }
 
-    // Snapshot source editor (for logs)
     const FocusSnapshot source = CaptureFocusSnapshot();
     if (!source.foreground) {
         return fail(L"no foreground window to capture from");
     }
 
-    // Save user clipboard to restore at end
     std::wstring userClip;
     ClipboardReadUnicode(userClip, nullptr);
+
+    auto restoreClip = [&]() {
+        if (!userClip.empty()) {
+            ClipboardWriteUnicode(userClip, nullptr);
+        }
+    };
 
     // --- 1) Select all + copy from editor ---
     QP_LOG_INFO(L"workflow: select-all + copy from editor");
@@ -57,10 +64,8 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
         QP_LOG_WARN(L"workflow: editor text empty — continuing with prompt only");
     }
 
-    // Compose final payload
     std::wstring payload = promptBody;
     if (!editorText.empty()) {
-        // Templates already end with \n\n typically; still separate clearly.
         if (!payload.empty() && payload.back() != L'\n') payload += L"\n\n";
         payload += editorText;
     }
@@ -70,8 +75,7 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
     // --- 2) Find + activate browser ---
     BrowserTarget browser;
     if (!FindBrowserWindow(cfg_.browserTitleHint, browser, error)) {
-        // Restore clipboard before bailing
-        if (!userClip.empty()) ClipboardWriteUnicode(userClip, nullptr);
+        restoreClip();
         return false;
     }
     if (!ActivateBrowser(browser, error)) {
@@ -85,36 +89,73 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
     QP_LOG_INFO(L"workflow: new tab");
     ReleaseModifiers(nullptr);
     if (!SendNewTab(error)) {
-        if (!userClip.empty()) ClipboardWriteUnicode(userClip, nullptr);
+        restoreClip();
         return fail(error && !error->empty() ? *error : L"Ctrl+T failed");
     }
     if (cfg_.afterNewTabMs > 0) Sleep(static_cast<DWORD>(cfg_.afterNewTabMs));
 
-    // --- 4) Navigate to AI URL (omnibox should be focused on new tab) ---
+    // --- 4) Navigate to AI URL ---
     QP_LOG_INFO(L"workflow: navigate to %s", url.c_str());
-    // Focus omnibox explicitly (helps if new-tab focus is flaky)
     SendFocusOmnibox(nullptr);
     Sleep(40);
 
     if (!ClipboardWriteUnicode(url, error)) {
-        if (!userClip.empty()) ClipboardWriteUnicode(userClip, nullptr);
+        restoreClip();
         return fail(error && !error->empty() ? *error : L"clipboard url write failed");
     }
     if (!SendPaste(error)) {
-        if (!userClip.empty()) ClipboardWriteUnicode(userClip, nullptr);
+        restoreClip();
         return fail(error && !error->empty() ? *error : L"paste URL failed");
     }
     if (cfg_.afterUrlPasteMs > 0) Sleep(static_cast<DWORD>(cfg_.afterUrlPasteMs));
     if (!SendEnter(error)) {
-        if (!userClip.empty()) ClipboardWriteUnicode(userClip, nullptr);
+        restoreClip();
         return fail(error && !error->empty() ? *error : L"Enter failed");
     }
 
-    QP_LOG_INFO(L"workflow: waiting %d ms for page load / input focus",
-                cfg_.afterNavigateMs);
-    if (cfg_.afterNavigateMs > 0) {
-        Sleep(static_cast<DWORD>(cfg_.afterNavigateMs));
+    // --- 4b) Smart wait: title + UI Automation edit (not a fixed sleep) ---
+    // Re-resolve browser hwnd in case the top-level window changed (rare).
+    {
+        BrowserTarget b2;
+        if (FindBrowserWindow(cfg_.browserTitleHint, b2, nullptr) && b2.hwnd) {
+            browser = b2;
+        }
     }
+
+    PageReadyConfig pr;
+    pr.browserHwnd = browser.hwnd;
+    pr.titleHint = !cfg_.pageTitleHint.empty() ? cfg_.pageTitleHint
+                                               : TitleHintFromUrl(url);
+    pr.timeoutMs = cfg_.pageReadyTimeoutMs;
+    pr.pollMs    = cfg_.pageReadyPollMs;
+    pr.minWaitMs = cfg_.pageReadyMinMs;
+    pr.settleMs  = cfg_.pageReadySettleMs;
+    pr.useUia    = cfg_.pageReadyUseUia;
+    pr.preferFocusedEdit = true;
+    pr.focusFoundEdit = true;
+
+    QP_LOG_INFO(L"workflow: smart page-ready (titleHint='%s' timeout=%d uia=%d)",
+                pr.titleHint.c_str(), pr.timeoutMs, pr.useUia ? 1 : 0);
+
+    PageReadyResult ready{};
+    std::wstring readyErr;
+    const bool isReady = WaitForAiPageReady(pr, ready, &readyErr);
+    if (!isReady) {
+        QP_LOG_WARN(L"workflow: page not confirmed ready (%s) waited=%dms title='%s'",
+                    readyErr.c_str(), ready.waitedMs, ready.title.c_str());
+        if (!cfg_.pasteEvenIfNotReady) {
+            restoreClip();
+            return fail(readyErr.empty() ? L"page not ready" : readyErr);
+        }
+        QP_LOG_WARN(L"workflow: pasting anyway (pasteEvenIfNotReady=1)");
+    } else {
+        QP_LOG_INFO(L"workflow: page ready in %dms via %s edit='%s'",
+                    ready.waitedMs, ready.detail.c_str(), ready.editName.c_str());
+    }
+
+    // Ensure browser still foreground before paste
+    ActivateBrowser(browser, nullptr);
+    Sleep(40);
 
     // --- 5) Paste prompt + editor text into AI input ---
     QP_LOG_INFO(L"workflow: paste payload into AI input");
@@ -122,14 +163,13 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
     WaitModifiersReleased(200);
 
     if (!ClipboardWriteUnicode(payload, error)) {
-        if (!userClip.empty()) ClipboardWriteUnicode(userClip, nullptr);
+        restoreClip();
         return fail(error && !error->empty() ? *error : L"clipboard payload write failed");
     }
     if (!SendPaste(error)) {
-        // Fallback: unicode type (slow but sometimes works if paste blocked)
         QP_LOG_WARN(L"workflow: Ctrl+V failed, trying unicode fallback");
         if (!SendUnicodeText(payload, error)) {
-            if (!userClip.empty()) ClipboardWriteUnicode(userClip, nullptr);
+            restoreClip();
             return fail(error && !error->empty() ? *error : L"payload paste failed");
         }
     }
@@ -137,14 +177,8 @@ bool AiWorkflow::Run(const std::wstring& promptBody,
         Sleep(static_cast<DWORD>(cfg_.afterFinalPasteMs));
     }
 
-    // --- 6) Restore user clipboard ---
-    if (!userClip.empty()) {
-        if (!ClipboardWriteUnicode(userClip, nullptr)) {
-            QP_LOG_WARN(L"workflow: could not restore user clipboard");
-        } else {
-            QP_LOG_DEBUG(L"workflow: user clipboard restored");
-        }
-    }
+    restoreClip();
+    QP_LOG_DEBUG(L"workflow: user clipboard restored");
 
     QP_LOG_INFO(L"workflow: DONE SendToAi");
     return true;
