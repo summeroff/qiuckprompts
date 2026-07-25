@@ -138,7 +138,7 @@ struct WorkflowConfig {
     int afterActivateBrowserMs = 200;
     int afterNewTabMs          = 250;
     int afterUrlPasteMs        = 80;
-    int afterFinalPasteMs      = 250;
+    int afterFinalPasteMs      = 300;
 
     // Smart page-ready wait (replaces fixed 2.8s sleep).
     // Uses window title + UI Automation to find the chat Edit control.
@@ -151,6 +151,15 @@ struct WorkflowConfig {
 
     // If smart wait times out, still attempt paste (best-effort).
     bool pasteEvenIfNotReady = true;
+
+    // How to join prompt template + captured editor text.
+    // true  =>  "<prompt>:\n\n```\n<editor text>\n```\n"
+    // false =>  "<prompt>\n\n<editor text>"  (legacy plain concat)
+    bool fenceEditorText = true;
+
+    // Extra delay after final paste before restoring the user's clipboard.
+    // Meta AI / SPAs sometimes read the clipboard slightly after Ctrl+V.
+    int clipboardRestoreDelayMs = 400;
 };
 
 // ---- Runtime options (CLI) ------------------------------------------------
