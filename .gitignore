@@ -2,6 +2,12 @@
 build/
 out/
 cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+Testing/
+CTestTestfile.cmake
 *.user
 *.suo
 *.ncb
@@ -11,16 +17,25 @@ cmake-build-*/
 *.VC.opendb
 .vs/
 
-# Binaries
+# Binaries / compiler junk
 *.exe
 *.dll
 *.lib
 *.pdb
 *.ilk
 *.obj
+*.o
 *.exp
 *.iobj
 *.ipdb
+*.a
+*.so
+*.dylib
+
+# Packaging / release scratch
+dist/
+*.zip
+*.7z
 
 # Logs / local runtime
 logs/
@@ -31,8 +46,9 @@ logs/
 .vscode/
 *.swp
 *~
+.DS_Store
 Thumbs.db
 Desktop.ini
 
-# Local overrides (keep sample templates tracked)
+# Local overrides
 # config.local.ini

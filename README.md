@@ -1,23 +1,30 @@
 # QiuckPrompts
 
-Lightweight **Windows 10/11** tray app: global hotkeys grab text from your editor and drop it into an AI chat with a prepared prompt.
+[![CI](https://github.com/summeroff/qiuckprompts/actions/workflows/ci.yml/badge.svg)](https://github.com/summeroff/qiuckprompts/actions/workflows/ci.yml)
 
-Pure Win32 + C++17. No third-party libraries. Built to debug, trace, and extend.
+Lightweight **Windows 10/11** tray app: global hotkeys grab text from your editor and send it to an AI chat with a prepared prompt.
 
-## What a hotkey does (Send-to-AI)
+Pure **Win32 + C++17**. No third-party libraries. Built to debug, trace, and extend.
 
-1. Release modifiers from the chord  
-2. **Ctrl+A** / **Ctrl+C** in the focused editor  
-3. Activate **Chrome Beta** (fallback: Chrome / Edge)  
-4. **Ctrl+T** new tab → open AI URL (default [meta.ai](https://www.meta.ai/))  
-5. Wait for page → **paste** `prompt + editor text`  
-6. Restore your previous clipboard  
+> Windows tray app: hotkeys grab editor text and send it to an AI chat with a prepared prompt.
 
-Insert-only mode (template paste, no browser) is available via tray toggle or `--insert-only`.
+## Features
+
+- System tray icon, single instance
+- Ergonomic hotkeys (left hand `Ctrl+Alt`, right hand letter)
+- **Fire on key release** so modifiers are up before automation runs
+- Send-to-AI workflow:
+  1. Select-all + copy from the focused editor  
+  2. Activate Chrome (Dev/Beta/stable) / Edge  
+  3. New tab → open AI URL (default [meta.ai](https://www.meta.ai/))  
+  4. Adaptive wait (window title + **UI Automation** chat input)  
+  5. Paste `prompt + editor text`  
+  6. Restore clipboard  
+- Insert-only mode (paste template into the current field)
+- File + debugger logging; optional `titles.log` for mining real window titles
+- Templates / hotkeys in `include/config.hpp` (file config planned later)
 
 ## Default hotkeys
-
-Left hand holds **Ctrl+Alt**, right hand presses the letter:
 
 | Hotkey | Action |
 |--------|--------|
@@ -27,95 +34,108 @@ Left hand holds **Ctrl+Alt**, right hand presses the letter:
 | `Ctrl+Alt+I` | Explain simply → AI |
 | `Ctrl+Alt+O` | Code review → AI |
 
-Edit bindings / prompts / AI URL in **`include/config.hpp`**.
+Edit bindings, prompts, and AI URL in **`include/config.hpp`**, then rebuild.
+
+## Requirements
+
+- Windows 10 or 11 (x64)
+- [CMake](https://cmake.org/) 3.20+
+- Visual Studio 2022 with C++ desktop workload (MSVC)
 
 ## Build
 
 ```bat
 scripts\build.bat
-:: or
+```
+
+Or manually:
+
+```bat
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Debug
 ```
 
-Exe: `build\Debug\qiuckprompts.exe`
+| Output | Path |
+|--------|------|
+| Exe | `build\Debug\qiuckprompts.exe` |
+| PDB | `build\Debug\qiuckprompts.pdb` |
+
+Release-style local build:
 
 ```bat
+cmake --build build --config RelWithDebInfo
+```
+
+## Run / test
+
+```bat
+build\Debug\qiuckprompts.exe
+build\Debug\qiuckprompts.exe --console --log-level=debug
 build\Debug\qiuckprompts.exe --self-test
-build\Debug\qiuckprompts.exe --console --log-level=trace
 ```
 
 ## CLI
 
 | Flag | Meaning |
 |------|---------|
-| `--console` | Live logs |
-| `--log-level=...` | trace/debug/info/warn/error |
-| `--ai-url=URL` | Default chat URL |
+| `--console` | Live logs on a console |
+| `--log-level=LEVEL` | `trace` \| `debug` \| `info` \| `warn` \| `error` |
+| `--log-file=PATH` | Override log path |
+| `--ai-url=URL` | Default AI chat URL |
 | `--browser-hint=TEXT` | Prefer matching window/path (default `Chrome Beta`) |
 | `--page-title-hint=TEXT` | Title must contain this (auto from URL if empty) |
 | `--page-ready-timeout=MS` | Max wait for page/input (default 15000) |
+| `--page-ready-min=MS` | Min wait after navigate (default 500) |
+| `--no-uia` | Title-only wait (disable UI Automation) |
 | `--hotkey-on-press` | Fire on key-down (default is on-release) |
-| `--insert-only` | Skip browser; paste template only |
-| `--self-test` | Headless checks |
+| `--hotkey-release-timeout=MS` | Max wait for key-up (default 3000) |
+| `--insert-only` | Paste template only (no browser flow) |
+| `--self-test` | Headless checks, exit 0/1 |
+| `--help` | Help text |
 
-## Hotkey hold / release
+## Releases
 
-Default: **fire on release** (`ARMED` → release → `FIRE`).
+CI builds on every push/PR. Pushing a version tag creates a GitHub Release with a Windows x64 zip:
 
-## Collecting window titles (for future config)
-
-Every run appends stable `TITLE_SAMPLE` lines to:
-
-- `build\Debug\logs\titles.log`  (easy to mine)
-- main `qiuckprompts.log` as well
-
-**How to collect:**
-
-1. Start the app  
-2. Open meta.ai / Gemini / etc. tabs in Chrome Beta  
-3. Tray → **Sample window titles now** (repeat after each site)  
-4. Or run hotkeys a few times  
-5. Tray → **Open titles.log**
-
-Example line:
-
-```text
-TITLE_SAMPLE ts=... where=page_ready_poll hwnd=... fg=1 class='Chrome_WidgetWin_1' exe='chrome.exe' title='Meta AI - Chrome Beta' note='t=1200ms titleReady=1 hint=Meta'
+```bat
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-`where=` tags to filter: `startup`, `tray_sample`, `hotkey_fire`, `workflow_after_navigate_enter`, `page_ready_poll`, `page_ready_ready`, `browser_selected`, …
+Asset name: `qiuckprompts-<tag>-win-x64.zip` (contains `qiuckprompts.exe` + PDB).
 
 ## Layout
 
-| Module | Role |
-|--------|------|
-| `config.hpp` | Templates, hotkeys, workflow timings/URL |
-| `workflow` | Full send-to-AI pipeline |
-| `browser` | Find/activate Chrome Beta |
-| `page_ready` | Title + UIA wait |
-| `title_sample` | `TITLE_SAMPLE` logging → `titles.log` |
-| `input_sim` | Keys, clipboard, focus helpers |
-| `injector` | Insert-only paste path |
-| `hotkeys` / `tray` / `logger` | Shell |
+| Path | Role |
+|------|------|
+| `include/config.hpp` | Templates, hotkeys, workflow knobs |
+| `src/workflow.cpp` | Send-to-AI pipeline |
+| `src/browser.cpp` | Find / activate browser window |
+| `src/page_ready.cpp` | Title + UI Automation wait |
+| `src/title_sample.cpp` | `TITLE_SAMPLE` → `titles.log` |
+| `src/hotkeys.cpp` | Global hotkeys, fire-on-release |
+| `src/injector.cpp` | Insert-only paste path |
+| `src/input_sim.cpp` | Keys, clipboard, focus helpers |
+| `src/tray.cpp` | Notify icon + menu |
+| `.github/workflows/ci.yml` | Build, test, tagged releases |
 
-## Tuning flaky steps
+## Collecting window titles
 
-Page ready is **not** a fixed sleep anymore. After opening the AI URL we poll:
+For tuning `pageTitleHint` / browser matching:
 
-1. Tab title left “New Tab” and matches hint (auto from URL: meta.ai → `Meta`)  
-2. **UI Automation** finds a non-omnibox `Edit` (chat box) and focuses it  
+1. Run the app  
+2. Open AI tabs in Chrome  
+3. Tray → **Sample window titles now**  
+4. Tray → **Open titles.log** → `build\Debug\logs\titles.log`  
 
-Chrome does **not** expose the chat box as a Win32 `HWND` — only a single render surface. UIA is the supported way to “see” the input.
+Lines are tagged `TITLE_SAMPLE` with stable `where=` fields.
 
-```bat
-qiuckprompts.exe --page-ready-timeout=20000
-qiuckprompts.exe --page-title-hint=Meta
-qiuckprompts.exe --no-uia
-```
+## Design notes
 
-Logs: look for `page_ready: READY after Xms` in `<exe_dir>\logs\qiuckprompts.log`.
+- Chrome does **not** expose the chat box as a Win32 `HWND`. Readiness uses the **UI Automation** accessibility tree plus the tab title.
+- Hotkeys **arm on press** and **run on release** so Ctrl/Alt are up before Select-all/Copy/Paste.
+- No Qt/WPF/Electron — message-only window + tray only.
 
 ## License
 
-Personal tooling — add a license when you care.
+MIT — see [LICENSE](LICENSE).

@@ -1,0 +1,84 @@
+# Build, test, and (on version tags) publish a Windows x64 release.
+#
+# CI:    push / PR → Debug build + --self-test
+# Rel:   push tag v* → RelWithDebInfo build + zip + GitHub Release
+
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & test (Windows x64)
+    runs-on: windows-latest
+
+    permissions:
+      contents: write  # needed to create releases on tags
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (VS 2022 x64)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Debug
+        run: cmake --build build --config Debug --parallel
+
+      - name: Self-test
+        run: .\build\Debug\qiuckprompts.exe --self-test
+
+      - name: Upload Debug artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qiuckprompts-debug-win-x64
+          path: |
+            build/Debug/qiuckprompts.exe
+            build/Debug/qiuckprompts.pdb
+          if-no-files-found: error
+          retention-days: 14
+
+      # ---------- Release path (version tags only) ----------
+      - name: Build RelWithDebInfo
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cmake --build build --config RelWithDebInfo --parallel
+
+      - name: Package release zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $name = "qiuckprompts-$tag-win-x64"
+          $dir = "dist/$name"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "build/RelWithDebInfo/qiuckprompts.exe" "$dir/"
+          if (Test-Path "build/RelWithDebInfo/qiuckprompts.pdb") {
+            Copy-Item "build/RelWithDebInfo/qiuckprompts.pdb" "$dir/"
+          }
+          if (Test-Path "README.md") { Copy-Item "README.md" "$dir/" }
+          if (Test-Path "LICENSE")   { Copy-Item "LICENSE"   "$dir/" }
+          Compress-Archive -Path "$dir/*" -DestinationPath "$name.zip" -Force
+          Get-Item "$name.zip" | Format-List Name, Length, FullName
+
+      - name: Smoke-test release binary
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: .\build\RelWithDebInfo\qiuckprompts.exe --self-test
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: qiuckprompts-*-win-x64.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
