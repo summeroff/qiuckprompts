@@ -24,7 +24,28 @@ Pure **Win32 + C++17**. No third-party libraries. Built to debug, trace, and ext
 - File + debugger logging; optional `titles.log` for mining real window titles
 - Templates / hotkeys in `include/config.hpp` (file config planned later)
 
-## Default hotkeys
+
+## Configuration file
+
+Default path (next to the exe after build): `config/qiuckprompts.ini`
+
+Each `[section]` binds **hotkey + service URL + prompt file**:
+
+| Hotkey | Service | Purpose |
+|--------|---------|---------|
+| `Ctrl+Alt+J` | Meta | Quick grammar / light sanity, keep your voice |
+| `Ctrl+Alt+O` | Meta | Grammar in-thread; no over-explaining context |
+| `Ctrl+Alt+K` | Gemini | Deep fact-check + sources |
+| `Ctrl+Alt+L` | Grok | Collaborate on an idea |
+| `Ctrl+Alt+I` | Meta | Screenshot on clipboard + review prompt |
+
+Prompt bodies live in `config/prompts/*.txt`. Restart the app after edits.
+
+Screenshot flow: copy an image (e.g. Win+Shift+S), then `Ctrl+Alt+I`. The app checks for an image on the clipboard, opens Meta, pastes the image, then the prompt.
+
+Override path: `--config=D:\path\qiuckprompts.ini`
+
+## Default hotkeys (from config)
 
 | Hotkey | Action |
 |--------|--------|

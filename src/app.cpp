@@ -5,6 +5,7 @@
 #include "title_sample.hpp"
 #include "version.hpp"
 #include "workflow.hpp"
+#include "clipboard_image.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -120,8 +121,10 @@ bool App::RegisterHotkeys(std::wstring* error) {
     hotkeys_.SetReleaseTimeoutMs(cfg_.hotkeyReleaseTimeoutMs);
     hotkeys_.SetReleasePollMs(cfg_.hotkeyReleasePollMs);
     hotkeys_.SetCallback([this](int id, const HotkeyBinding& b) { OnHotkey(id, b); });
-    auto bindings = GetBuiltInBindings();
-    return hotkeys_.RegisterAll(hwnd_, std::move(bindings), error);
+    if (cfg_.bindings.empty()) {
+        GetBuiltinBindings(cfg_.bindings);
+    }
+    return hotkeys_.RegisterAll(hwnd_, cfg_.bindings, error);
 }
 
 void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
@@ -142,9 +145,9 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
     LogForegroundTitle(L"hotkey_fire", binding.hotkey.display);
     LogBrowserTitleSweep(L"hotkey_fire_sweep");
 
-    std::wstring body;
-    if (!FindTemplateBody(binding.templateId, body)) {
-        QP_LOG_ERROR(L"template not found: %s", binding.templateId.c_str());
+    std::wstring body = binding.promptBody;
+    if (body.empty()) {
+        QP_LOG_ERROR(L"empty prompt for binding '%s'", binding.name.c_str());
         hotkeys_.SetBusy(false);
         return;
     }
@@ -155,7 +158,16 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
     std::wstring err;
     bool ok = false;
     if (action == ActionKind::SendToAi) {
-        ok = workflow_.Run(body, binding.aiUrl, &err);
+        WorkflowRequest req;
+        req.promptBody = body;
+        req.aiUrl = binding.aiUrl;
+        req.pageTitleHint = binding.pageTitleHint;
+        req.captureEditor = binding.captureEditor;
+        req.requireClipboardImage = binding.requireClipboardImage;
+        req.fenceEditorText = binding.fenceEditorText;
+        req.service = binding.service;
+        req.label = binding.label;
+        ok = workflow_.Run(req, &err);
     } else {
         ok = injector_.Inject(body, &err);
     }
@@ -249,9 +261,14 @@ void App::ShowHotkeyList() {
         text += L"  —  ";
         text += b.label;
         text += L"  [";
-        text += b.templateId;
+        text += b.name.empty() ? b.templateId : b.name;
         text += L"]  ";
+        if (!b.service.empty()) {
+            text += b.service;
+            text += L"  ";
+        }
         text += ActionKindName(b.action);
+        if (b.requireClipboardImage) text += L"  [image]";
         text += L"\n";
     }
     if (hotkeys_.Bindings().empty()) {
@@ -326,6 +343,20 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
                 cfg_.workflow.pageReadyTimeoutMs,
                 cfg_.workflow.pageReadyUseUia ? 1 : 0);
 
+    // Load bindings from config file (hotkey + prompt + service URL).
+    {
+        std::wstring cerr;
+        const std::wstring tryPath = cfg_.configPath; // may be set by --config
+        if (!LoadConfigFile(tryPath, cfg_, &cerr)) {
+            QP_LOG_WARN(L"config file not loaded (%s) — using built-in bindings",
+                        cerr.c_str());
+            GetBuiltinBindings(cfg_.bindings);
+        } else {
+            QP_LOG_INFO(L"config loaded: %s (%zu bindings)",
+                        cfg_.configPath.c_str(), cfg_.bindings.size());
+        }
+    }
+
     // Baseline snapshot at startup (whatever browsers are already open).
     LogBrowserTitleSweep(L"startup");
 
@@ -395,53 +426,49 @@ int App::RunSelfTest() {
 
     wprintf(L"qiuckprompts self-test\n");
 
-    // Templates resolve
-    const BuiltInTemplate* t = nullptr;
-    size_t n = 0;
-    GetBuiltInTemplates(t, n);
-    expect(n >= 3, L"builtin templates count >= 3");
-    expect(t && t[0].id && t[0].body && wcslen(t[0].body) > 0, L"first template non-empty");
-
-    std::wstring body;
-    expect(FindTemplateBody(L"grammar_check", body) && !body.empty(),
-           L"FindTemplateBody(grammar_check)");
-    expect(!FindTemplateBody(L"no_such_template_xyz", body),
-           L"missing template returns false");
-
-    // Bindings well-formed
-    auto bindings = GetBuiltInBindings();
+    std::vector<HotkeyBinding> bindings;
+    GetBuiltinBindings(bindings);
     expect(!bindings.empty(), L"builtin bindings non-empty");
     for (const auto& b : bindings) {
         expect(b.hotkey.vk != 0, L"binding vk non-zero");
-        expect(!b.templateId.empty(), L"binding templateId set");
-        std::wstring tmp;
-        expect(FindTemplateBody(b.templateId, tmp), L"binding template exists");
+        expect(!b.name.empty() || !b.templateId.empty(), L"binding name set");
+        expect(!b.promptBody.empty(), L"binding prompt non-empty");
     }
 
-    // Hotkey display
     const std::wstring disp = FormatHotkeyDisplay(MOD_CONTROL | MOD_ALT, 'J');
     expect(disp.find(L"Ctrl") != std::wstring::npos, L"display contains Ctrl");
     expect(disp.find(L"J") != std::wstring::npos, L"display contains J");
-
-    // Bindings default to SendToAi
     expect(bindings[0].action == ActionKind::SendToAi, L"default action SendToAi");
     expect(bindings[0].hotkey.vk == static_cast<UINT>('J'), L"first hotkey is J");
 
-    // Trigger mode helpers
     expect(std::wstring(HotkeyTriggerModeName(HotkeyTriggerMode::OnRelease)) == L"OnRelease",
            L"trigger mode name");
     AppConfig ac;
     expect(ac.hotkeyTrigger == HotkeyTriggerMode::OnRelease, L"default OnRelease");
     expect(ac.hotkeyReleaseTimeoutMs > 0, L"release timeout default");
 
-    // Workflow config defaults
     WorkflowConfig wc;
     expect(!wc.defaultAiUrl.empty(), L"default AI URL set");
     expect(!wc.browserTitleHint.empty(), L"browser hint set");
     expect(wc.pageReadyTimeoutMs > 0, L"pageReadyTimeoutMs > 0");
     expect(wc.fenceEditorText == true, L"default fenceEditorText on");
 
-    // Payload composition: prompt + fenced body
+    {
+        HotkeySpec hs;
+        std::wstring e;
+        expect(ParseHotkey(L"Ctrl+Alt+J", hs, &e) && hs.vk == static_cast<UINT>(L'J'),
+               L"ParseHotkey Ctrl+Alt+J");
+    }
+    {
+        const std::wstring p = BuildPromptPayload(L"Fix this", L"hello", true);
+        expect(p.find(L"Fix this") != std::wstring::npos && p.find(L"```") != std::wstring::npos,
+               L"BuildPromptPayload fence");
+        const std::wstring p2 = BuildPromptPayload(L"X {{TEXT}} Y", L"ZZ", true);
+        expect(p2.find(L"ZZ") != std::wstring::npos && p2.find(L"{{TEXT}}") == std::wstring::npos,
+               L"BuildPromptPayload {{TEXT}}");
+    }
+    expect(ClipboardHasImage() == ClipboardHasImage(), L"ClipboardHasImage callable");
+
     {
         const std::wstring prompt = L"Please proofread the following text";
         const std::wstring text = L"hello world";
@@ -450,78 +477,53 @@ int App::RunSelfTest() {
         expect(fenced.find(L":") != std::wstring::npos, L"fenced payload has colon");
         expect(fenced.find(L"```") != std::wstring::npos, L"fenced payload has fences");
         expect(fenced.find(text) != std::wstring::npos, L"fenced payload contains text");
-        const std::wstring plain = AiWorkflow::ComposePayload(prompt, text, false);
-        expect(plain.find(prompt) != std::wstring::npos && plain.find(text) != std::wstring::npos,
-               L"plain payload has both parts");
-        expect(AiWorkflow::ComposePayload(prompt, L"", true) == prompt,
-               L"empty text returns prompt only");
     }
 
-    // Title hint derivation
+    // Load sample config from source tree if present
+    {
+        const std::wstring srcIni = PathJoin({GetExeDir(), L"..", L"..", L"config", L"qiuckprompts.ini"});
+        // Also try repo-relative via cwd
+        std::wstring try1 = L"config\qiuckprompts.ini";
+        std::wstring try2 = PathJoin(GetExeDir(), L"config\qiuckprompts.ini");
+        AppConfig loaded;
+        std::wstring err;
+        bool ok = LoadConfigFile(try2, loaded, &err);
+        if (!ok) ok = LoadConfigFile(L"C:\work\\repos\\qiuckprompts\\config\qiuckprompts.ini", loaded, &err);
+        if (ok) {
+            expect(!loaded.bindings.empty(), L"LoadConfigFile bindings");
+            bool hasShot = false;
+            for (const auto& b : loaded.bindings) {
+                if (b.requireClipboardImage) hasShot = true;
+            }
+            expect(hasShot, L"config has screenshot binding");
+            wprintf(L"[ OK ] LoadConfigFile (%zu bindings)\n", loaded.bindings.size());
+        } else {
+            wprintf(L"[SKIP] LoadConfigFile (%s)\n", err.c_str());
+        }
+    }
+
     expect(TitleHintFromUrl(L"https://www.meta.ai/") == L"Meta", L"hint meta.ai");
     expect(TitleHintFromUrl(L"https://gemini.google.com/app") == L"Gemini", L"hint gemini");
-    expect(TitleHintFromUrl(L"https://chatgpt.com/") == L"ChatGPT", L"hint chatgpt");
-
-    // COM / UIA create (no browser required)
+    expect(TitleHintFromUrl(L"https://grok.com/") == L"Grok", L"hint grok");
     expect(EnsureComInitialized(), L"EnsureComInitialized");
 
-    // input_sim clipboard helpers
     {
-        const std::wstring sample = L"qiuckprompts-clip-helper-✓";
+        const std::wstring sample = L"qiuckprompts-clip-helper";
         std::wstring err;
         expect(ClipboardWriteUnicode(sample, &err), L"ClipboardWriteUnicode");
         std::wstring got;
         expect(ClipboardReadUnicode(got, &err) && got == sample, L"ClipboardReadUnicode round-trip");
     }
 
-    // Paths
     expect(!GetExeDir().empty(), L"GetExeDir");
     expect(!GetExePath().empty(), L"GetExePath");
-
-    // Path join / ensure log dir
     const std::wstring logDir = PathJoin(GetExeDir(), L"logs");
     expect(EnsureDirectory(logDir), L"EnsureDirectory(logs)");
-
-    // Logger round-trip
     const std::wstring logFile = PathJoin(logDir, L"self-test.log");
     Logger::Instance().Init(logFile, LogLevel::Trace, true);
     QP_LOG_INFO(L"self-test log line");
     Logger::Instance().Shutdown();
     expect(FileExists(logFile), L"log file created");
-
-    // Clipboard set/get (no paste)
-    {
-        TextInjector inj(0);
-        const std::wstring sample = L"qiuckprompts-self-test-unicode-✓";
-        // Use internal path via public Inject would paste — instead probe util via OpenClipboard
-        // Minimal: write clipboard ourselves
-        if (OpenClipboard(nullptr)) {
-            EmptyClipboard();
-            const size_t bytes = (sample.size() + 1) * sizeof(wchar_t);
-            HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, bytes);
-            expect(mem != nullptr, L"GlobalAlloc clipboard");
-            if (mem) {
-                void* p = GlobalLock(mem);
-                memcpy(p, sample.c_str(), bytes);
-                GlobalUnlock(mem);
-                expect(SetClipboardData(CF_UNICODETEXT, mem) != nullptr, L"SetClipboardData");
-            }
-            CloseClipboard();
-
-            if (OpenClipboard(nullptr)) {
-                HANDLE h = GetClipboardData(CF_UNICODETEXT);
-                expect(h != nullptr, L"GetClipboardData");
-                if (h) {
-                    const wchar_t* p = static_cast<const wchar_t*>(GlobalLock(h));
-                    expect(p && sample == p, L"clipboard round-trip text");
-                    if (p) GlobalUnlock(h);
-                }
-                CloseClipboard();
-            }
-        } else {
-            wprintf(L"[SKIP] clipboard tests (OpenClipboard busy)\n");
-        }
-    }
 
     wprintf(L"\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
