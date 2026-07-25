@@ -18,7 +18,8 @@ permissions:
 jobs:
   build:
     name: Build & test (Windows x64)
-    runs-on: windows-latest
+    # windows-2022 ships VS 2022; windows-latest may not.
+    runs-on: windows-2022
 
     permissions:
       contents: write  # needed to create releases on tags
