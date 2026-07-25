@@ -27,9 +27,26 @@ Pure **Win32 + C++17**. No third-party libraries. Built to debug, trace, and ext
 
 ## Configuration file
 
-Default path (next to the exe after build): `config/qiuckprompts.ini`
+**One file:** `config/qiuckprompts.ini` (copied next to the exe on build).
 
-Each `[section]` binds **hotkey + service URL + prompt file**:
+Each `[section]` binds **hotkey + service URL + full prompt text**:
+
+```ini
+[grammar_meta]
+label=Grammar quick (Meta)
+service=meta
+hotkey=Ctrl+Alt+J
+url=https://www.meta.ai/
+title_hint=Meta
+capture_editor=1
+prompt<<<
+Light edit only. Fix grammar...
+Message:
+>>>
+```
+
+Multi-line prompts use `prompt<<<` … `>>>` (so you can use `;` and markdown ` ``` ` inside).  
+Single-line `prompt=...` still works. External `prompt=file.txt` is optional if you really want a separate file.
 
 | Hotkey | Service | Purpose |
 |--------|---------|---------|
@@ -39,11 +56,9 @@ Each `[section]` binds **hotkey + service URL + prompt file**:
 | `Ctrl+Alt+L` | Grok | Collaborate on an idea |
 | `Ctrl+Alt+I` | Meta | Screenshot on clipboard + review prompt |
 
-Prompt bodies live in `config/prompts/*.txt`. Restart the app after edits.
+Restart the app after edits. Override path: `--config=D:\path\qiuckprompts.ini`
 
-Screenshot flow: copy an image (e.g. Win+Shift+S), then `Ctrl+Alt+I`. The app checks for an image on the clipboard, opens Meta, pastes the image, then the prompt.
-
-Override path: `--config=D:\path\qiuckprompts.ini`
+Screenshot flow: Win+Shift+S, then `Ctrl+Alt+I`.
 
 ## Default hotkeys (from config)
 
