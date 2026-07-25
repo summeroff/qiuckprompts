@@ -4,6 +4,7 @@
 #include "page_ready.hpp"
 #include "title_sample.hpp"
 #include "version.hpp"
+#include "workflow.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -438,6 +439,23 @@ int App::RunSelfTest() {
     expect(!wc.defaultAiUrl.empty(), L"default AI URL set");
     expect(!wc.browserTitleHint.empty(), L"browser hint set");
     expect(wc.pageReadyTimeoutMs > 0, L"pageReadyTimeoutMs > 0");
+    expect(wc.fenceEditorText == true, L"default fenceEditorText on");
+
+    // Payload composition: prompt + fenced body
+    {
+        const std::wstring prompt = L"Please proofread the following text";
+        const std::wstring text = L"hello world";
+        const std::wstring fenced = AiWorkflow::ComposePayload(prompt, text, true);
+        expect(fenced.find(prompt) == 0, L"fenced payload starts with prompt");
+        expect(fenced.find(L":") != std::wstring::npos, L"fenced payload has colon");
+        expect(fenced.find(L"```") != std::wstring::npos, L"fenced payload has fences");
+        expect(fenced.find(text) != std::wstring::npos, L"fenced payload contains text");
+        const std::wstring plain = AiWorkflow::ComposePayload(prompt, text, false);
+        expect(plain.find(prompt) != std::wstring::npos && plain.find(text) != std::wstring::npos,
+               L"plain payload has both parts");
+        expect(AiWorkflow::ComposePayload(prompt, L"", true) == prompt,
+               L"empty text returns prompt only");
+    }
 
     // Title hint derivation
     expect(TitleHintFromUrl(L"https://www.meta.ai/") == L"Meta", L"hint meta.ai");

@@ -19,6 +19,11 @@ public:
 
     void SetConfig(const WorkflowConfig& cfg) { cfg_ = cfg; }
 
+    // Build final message for the AI chat. Exposed for self-test.
+    static std::wstring ComposePayload(const std::wstring& promptBody,
+                                       const std::wstring& editorText,
+                                       bool fenceEditorText);
+
 private:
     WorkflowConfig cfg_;
 };
