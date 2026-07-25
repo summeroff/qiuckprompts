@@ -252,21 +252,67 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
     std::wstring section;
     std::map<std::wstring, std::map<std::wstring, std::wstring>> secs;
 
+    // Line parser with multi-line prompt<<< ... >>> blocks.
+    // Inside a prompt block: keep ';' and blank lines (full prompt text).
     std::wstringstream ss(text);
     std::wstring line;
+    bool inPrompt = false;
+    std::wstring promptAccum;
     while (std::getline(ss, line)) {
-        // strip comments
-        const size_t sc = line.find(L';');
-        if (sc != std::wstring::npos) line = line.substr(0, sc);
+        // normalize \r already stripped by ReadUtf8File mostly; still strip trailing \r
+        if (!line.empty() && line.back() == L'\r') line.pop_back();
+
+        if (inPrompt) {
+            const std::wstring trimmed = Trim(line);
+            if (trimmed == L">>>") {
+                secs[section][L"prompt"] = promptAccum;
+                inPrompt = false;
+                promptAccum.clear();
+                continue;
+            }
+            if (!promptAccum.empty()) promptAccum.push_back(L'\n');
+            promptAccum += line; // raw line, comments preserved
+            continue;
+        }
+
+        // Outside prompt: strip ; comments
+        {
+            const size_t sc = line.find(L';');
+            if (sc != std::wstring::npos) line = line.substr(0, sc);
+        }
         line = Trim(line);
         if (line.empty()) continue;
+
         if (line.front() == L'[' && line.back() == L']') {
             section = ToLower(Trim(line.substr(1, line.size() - 2)));
             continue;
         }
-        std::wstring k, v;
-        if (!SplitKeyValue(line, k, v)) continue;
-        secs[section][ToLower(k)] = v;
+
+        // prompt<<<  or  prompt = <<<
+        {
+            std::wstring k, v;
+            if (SplitKeyValue(line, k, v)) {
+                const std::wstring kl = ToLower(k);
+                const std::wstring vl = Trim(v);
+                if (kl == L"prompt" && (vl == L"<<<" || vl == L"\"\"\"" || vl == L"'''")) {
+                    inPrompt = true;
+                    promptAccum.clear();
+                    continue;
+                }
+                secs[section][kl] = v;
+                continue;
+            }
+            // bare form: prompt<<<
+            if (ToLower(line) == L"prompt<<<" || line == L"prompt<<<") {
+                inPrompt = true;
+                promptAccum.clear();
+                continue;
+            }
+        }
+    }
+    if (inPrompt) {
+        QP_LOG_WARN(L"config: unclosed prompt<<< block in section [%s]", section.c_str());
+        secs[section][L"prompt"] = promptAccum;
     }
 
     // settings
@@ -328,27 +374,46 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
         else
             b.fenceEditorText = cfg.workflow.fenceEditorText;
 
-        // prompt file or inline
+        // prompt: inline multi-line / single-line / optional external file
         const std::wstring promptRef = get(L"prompt");
         if (promptRef.empty()) {
-            QP_LOG_WARN(L"config: [%s] missing prompt= — skip", name.c_str());
+            QP_LOG_WARN(L"config: [%s] missing prompt — skip", name.c_str());
             continue;
         }
-        std::wstring promptPath = promptRef;
-        // relative to config dir
-        if (promptPath.find(L':') == std::wstring::npos &&
-            !(promptPath.size() >= 2 && (promptPath[0] == L'\\' || promptPath[0] == L'/'))) {
-            promptPath = PathJoin(cfg.configDir, promptRef);
-        }
-        std::wstring perr;
-        if (!ReadUtf8File(promptPath, b.promptBody, &perr)) {
-            // treat as inline prompt text if file missing
-            if (promptRef.find(L'.') == std::wstring::npos) {
-                b.promptBody = promptRef;
-            } else {
-                QP_LOG_ERROR(L"config: [%s] prompt load failed: %s", name.c_str(), perr.c_str());
-                continue;
+
+        // Prefer treating value as inline text. Only load as file if it looks like a path
+        // AND the file exists (keeps old prompt=foo.txt working if someone still uses it).
+        bool loadedAsFile = false;
+        const bool looksLikePath =
+            promptRef.find(L".txt") != std::wstring::npos ||
+            promptRef.find(L".md") != std::wstring::npos ||
+            promptRef.find(L'/') != std::wstring::npos ||
+            promptRef.find(L'\\') != std::wstring::npos;
+        if (looksLikePath) {
+            std::wstring promptPath = promptRef;
+            if (promptPath.find(L':') == std::wstring::npos &&
+                !(promptPath.size() >= 2 && (promptPath[0] == L'\\' || promptPath[0] == L'/'))) {
+                promptPath = PathJoin(cfg.configDir, promptRef);
             }
+            std::wstring perr;
+            if (ReadUtf8File(promptPath, b.promptBody, &perr)) {
+                loadedAsFile = true;
+                QP_LOG_DEBUG(L"config: [%s] prompt loaded from file %s", name.c_str(), promptPath.c_str());
+            }
+        }
+        if (!loadedAsFile) {
+            b.promptBody = promptRef;
+            // trim one trailing newline for tidiness
+            while (!b.promptBody.empty() &&
+                   (b.promptBody.back() == L'\n' || b.promptBody.back() == L'\r')) {
+                b.promptBody.pop_back();
+            }
+            if (!b.promptBody.empty()) b.promptBody.push_back(L'\n');
+        }
+
+        if (b.promptBody.empty()) {
+            QP_LOG_WARN(L"config: [%s] empty prompt — skip", name.c_str());
+            continue;
         }
 
         if (b.aiUrl.empty()) b.aiUrl = cfg.workflow.defaultAiUrl;
