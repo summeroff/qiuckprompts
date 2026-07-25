@@ -1,0 +1,8 @@
+Light edit only. Fix grammar, spelling, and awkward wording.
+Keep my voice, tone, and meaning. Prefer minimal changes — do not rewrite into a different style.
+Do a quick sanity / obvious-fact check only if something is clearly wrong; do not expand into a research brief.
+Return:
+1) corrected message (ready to paste)
+2) short bullet list of changes (optional if tiny)
+
+Message:

@@ -1,0 +1,18 @@
+I am posting the message below in an existing thread/context that readers can already see.
+Do NOT restate or over-explain that context. Do NOT write a long preamble. Readers already have it.
+Only polish MY message: grammar, spelling, awkward wording. Keep my voice. Minimal edits.
+If something is factually shaky, one short note is enough — no deep investigation.
+
+Return:
+1) corrected message only (ready to paste)
+2) optional one-line notes
+
+My message:
+```
+{{TEXT}}
+```
+
+Optional extra context (may be empty — ignore if blank):
+```
+{{CONTEXT}}
+```

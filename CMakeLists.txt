@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(qiuckprompts VERSION 0.2.0 LANGUAGES CXX RC)
+project(qiuckprompts VERSION 0.3.0 LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +34,7 @@ set(QP_SOURCES
     src/hotkeys.cpp
     src/injector.cpp
     src/input_sim.cpp
+    src/clipboard_image.cpp
     src/browser.cpp
     src/page_ready.cpp
     src/title_sample.cpp
@@ -50,6 +51,7 @@ set(QP_HEADERS
     include/hotkeys.hpp
     include/injector.hpp
     include/input_sim.hpp
+    include/clipboard_image.hpp
     include/browser.hpp
     include/page_ready.hpp
     include/title_sample.hpp
@@ -82,7 +84,18 @@ set_source_files_properties(resources/app.rc PROPERTIES
     COMPILE_DEFINITIONS "QP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR};QP_VERSION_MINOR=${PROJECT_VERSION_MINOR};QP_VERSION_PATCH=${PROJECT_VERSION_PATCH}"
 )
 
+# Portable layout next to the exe
+add_custom_command(TARGET qiuckprompts POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:qiuckprompts>/config/prompts"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/config"
+        "$<TARGET_FILE_DIR:qiuckprompts>/config"
+    COMMENT "Copy config/ + prompts beside executable"
+)
+
 enable_testing()
 add_test(NAME self_test COMMAND qiuckprompts --self-test)
 
 install(TARGETS qiuckprompts RUNTIME DESTINATION bin)
+install(DIRECTORY config/ DESTINATION bin/config)
