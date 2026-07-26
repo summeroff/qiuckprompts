@@ -13,7 +13,8 @@ cd /d "%~dp0.."
 if errorlevel 1 exit /b 1
 
 set "CF="
-where clang-format >nul 2>nul && for /f "delims=" %%I in ('where clang-format') do (
+rem Single where invocation (stderr suppressed); no-ops if not on PATH.
+for /f "delims=" %%I in ('where clang-format 2^>nul') do (
   if not defined CF set "CF=%%I"
 )
 if not defined CF if exist "%LOCALAPPDATA%\hermes\hermes-agent\venv\Scripts\clang-format.exe" (
@@ -26,9 +27,11 @@ if not defined CF if exist "C:\Program Files (x86)\LLVM\bin\clang-format.exe" (
   set "CF=C:\Program Files (x86)\LLVM\bin\clang-format.exe"
 )
 if not defined CF (
-  echo clang-format not found. Install LLVM or add clang-format to PATH.
+  echo clang-format not found. Put it on PATH or use one of:
   echo   winget install LLVM.LLVM
-  echo   uv pip install clang-format
+  echo   uv pip install --python "%%LOCALAPPDATA%%\hermes\hermes-agent\venv\Scripts\python.exe" clang-format
+  echo   ^(auto-detected at %%LOCALAPPDATA%%\hermes\hermes-agent\venv\Scripts\clang-format.exe^)
+  echo   or: any clang-format.exe on PATH
   exit /b 2
 )
 
