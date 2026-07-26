@@ -73,10 +73,16 @@ int ScoreBrowser(const std::wstring& title, const std::wstring& exePath,
     else if (fileL == L"firefox.exe")
         score += 5;
 
-    // Chrome Beta install path usually contains "chrome beta"
-    if (pathL.find(L"chrome beta") != std::wstring::npos)
+    // Channel install dirs: "...\Chrome Dev\...", "...\Chrome Beta\...", "...\Chrome\..."
+    // Titles usually stay "… - Google Chrome" for all channels — path is the real signal.
+    if (pathL.find(L"chrome dev") != std::wstring::npos)
         score += 100;
-    if (titleL.find(L"chrome beta") != std::wstring::npos)
+    else if (pathL.find(L"chrome beta") != std::wstring::npos)
+        score += 100;
+
+    if (titleL.find(L"chrome dev") != std::wstring::npos)
+        score += 80;
+    else if (titleL.find(L"chrome beta") != std::wstring::npos)
         score += 80;
 
     if (!titleHintLower.empty())
@@ -92,6 +98,20 @@ int ScoreBrowser(const std::wstring& title, const std::wstring& exePath,
         score += 5;
 
     return score;
+}
+
+// Secondary rank when scores tie (Dev > Beta > stable Chrome > other).
+int ChannelRank(const std::wstring& exePath)
+{
+    const std::wstring pathL = ToLowerCopy(exePath);
+    if (pathL.find(L"chrome dev") != std::wstring::npos)
+        return 3;
+    if (pathL.find(L"chrome beta") != std::wstring::npos)
+        return 2;
+    if (pathL.find(L"\\chrome\\") != std::wstring::npos ||
+        pathL.find(L"/chrome/") != std::wstring::npos)
+        return 1;
+    return 0;
 }
 
 struct EnumCtx
@@ -176,7 +196,7 @@ bool FindBrowserWindow(const std::wstring& titleHint, BrowserTarget& out, std::w
             {
                 *error += L" (hint='" + titleHint + L"')";
             }
-            *error += L". Open Chrome Beta (or Chrome/Edge) and try again.";
+            *error += L". Open Chrome Dev/Beta (or Chrome/Edge) and try again.";
         }
         QP_LOG_ERROR(L"browser: no candidates (hint='%s')", titleHint.c_str());
         return false;
@@ -191,13 +211,14 @@ bool FindBrowserWindow(const std::wstring& titleHint, BrowserTarget& out, std::w
         wchar_t note[64];
         swprintf(note, 64, L"score=%d", t.score);
         LogTitleSample(L"browser_candidate", t.hwnd, note);
-        if (t.score > best->score)
+        if (t.score > best->score ||
+            (t.score == best->score && ChannelRank(t.exePath) > ChannelRank(best->exePath)))
             best = &t;
     }
 
     out = *best;
-    QP_LOG_INFO(L"browser: selected score=%d hwnd=%p title='%s'", out.score, out.hwnd,
-                out.title.c_str());
+    QP_LOG_INFO(L"browser: selected score=%d hwnd=%p title='%s' exe='%s'", out.score, out.hwnd,
+                out.title.c_str(), out.exePath.c_str());
     LogTitleSample(L"browser_selected", out.hwnd, out.exePath);
     return true;
 }

@@ -90,7 +90,8 @@ bool LooksLikeNewTabTitle(const std::wstring& title)
     if (l.find(L"new tab") != std::wstring::npos)
         return true;
     // Just the browser chrome name with no page title yet
-    if (l == L"google chrome" || l == L"chrome beta" || l == L"microsoft edge" || l == L"chromium")
+    if (l == L"google chrome" || l == L"chrome beta" || l == L"chrome dev" ||
+        l == L"microsoft edge" || l == L"chromium")
     {
         return true;
     }
