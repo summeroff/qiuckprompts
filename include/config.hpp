@@ -71,9 +71,16 @@ struct WorkflowConfig {
     int pageReadySettleMs  = 200;
     bool pageReadyUseUia   = true;
     bool pasteEvenIfNotReady = true;
-
     bool fenceEditorText = true;
-    int clipboardRestoreDelayMs = 400;
+
+    // Extra delay after final paste before restoring the user's clipboard.
+    // Meta AI / SPAs often read the clipboard *after* Ctrl+V returns.
+    // Restoring too soon pastes the OLD clipboard (no prompt) into the form.
+    int clipboardRestoreDelayMs = 2500;
+
+    // true  = KEYEVENTF_UNICODE typing (no clipboard; avoids Meta late-read race)
+    // false = clipboard + Ctrl+V (faster; keep restore delay high)
+    bool pasteTextViaUnicode = true;
 };
 
 struct AppConfig {
