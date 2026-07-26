@@ -118,7 +118,7 @@ build\Debug\qiuckprompts.exe --self-test
 | `--log-level=LEVEL` | `trace` \| `debug` \| `info` \| `warn` \| `error` |
 | `--log-file=PATH` | Override log path |
 | `--ai-url=URL` | Default AI chat URL |
-| `--browser-hint=TEXT` | Prefer matching window/path (default `Chrome Beta`) |
+| `--browser-hint=TEXT` | Prefer matching window/path (default `Chrome Dev`) |
 | `--page-title-hint=TEXT` | Title must contain this (auto from URL if empty) |
 | `--page-ready-timeout=MS` | Max wait for page/input (default 15000) |
 | `--page-ready-min=MS` | Min wait after navigate (default 500) |

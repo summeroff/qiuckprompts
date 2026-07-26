@@ -67,7 +67,7 @@ struct HotkeyBinding
 
 struct WorkflowConfig
 {
-    std::wstring browserTitleHint = L"Chrome";
+    std::wstring browserTitleHint = L"Chrome Dev";
     std::wstring defaultAiUrl = L"https://www.meta.ai/";
     std::wstring pageTitleHint;
 

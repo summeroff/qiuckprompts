@@ -258,7 +258,7 @@ void App::ShowAbout()
     text += L" v";
     text += Utf8ToWide(QP_VERSION_STRING);
     text += L"\n\nHotkeys run a Send-to-AI workflow:\n"
-            L"  select-all → copy → Chrome Beta → new tab → AI URL → paste\n\n";
+            L"  select-all → copy → Chrome Dev → new tab → AI URL → paste\n\n";
     text += L"AI URL: ";
     text += cfg_.workflow.defaultAiUrl;
     text += L"\nBrowser hint: ";

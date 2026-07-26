@@ -18,7 +18,7 @@ struct PageReadyConfig
 
     // Reject titles that mean "not navigated yet".
     std::vector<std::wstring> titleReject = {
-        L"New Tab", L"new tab", L"Untitled", L"about:blank", L"Chrome Beta",
+        L"New Tab", L"new tab", L"Untitled", L"about:blank", L"Chrome Beta", L"Chrome Dev",
         // bare browser name only (no page title yet) — kept loose; combined with other checks
     };
 
