@@ -4,9 +4,9 @@
 // tagged CI release = tag without leading 'v'). Fallbacks keep editors happy
 // before the first configure.
 #if defined(__has_include)
-#  if __has_include("version_build.h")
-#    include "version_build.h"
-#  endif
+#if __has_include("version_build.h")
+#include "version_build.h"
+#endif
 #endif
 
 #ifndef QP_VERSION_MAJOR
