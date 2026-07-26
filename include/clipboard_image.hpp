@@ -5,17 +5,19 @@
 #include <string>
 #include <vector>
 
-namespace qp {
+namespace qp
+{
 
 // Snapshot of image-related clipboard formats (does not keep the clipboard open).
-struct ClipboardImage {
+struct ClipboardImage
+{
     bool empty() const { return !hasDib && !hasPng; }
 
     bool hasDib = false;
-    std::vector<unsigned char> dib;   // CF_DIB payload
+    std::vector<unsigned char> dib; // CF_DIB payload
 
     bool hasPng = false;
-    UINT pngFormat = 0;               // RegisterClipboardFormat(L"PNG")
+    UINT pngFormat = 0; // RegisterClipboardFormat(L"PNG")
     std::vector<unsigned char> png;
 };
 

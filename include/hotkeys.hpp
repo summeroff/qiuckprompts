@@ -7,14 +7,16 @@
 #include <functional>
 #include <vector>
 
-namespace qp {
+namespace qp
+{
 
 // Global hotkeys via RegisterHotKey.
 //
 // Default trigger mode is OnRelease:
 //   WM_HOTKEY arms the binding → poll until chord keys are up → then callback.
 // That way Ctrl/Alt are no longer held when the workflow starts (select-all/copy/paste).
-class HotkeyManager {
+class HotkeyManager
+{
 public:
     using Callback = std::function<void(int id, const HotkeyBinding& binding)>;
 
@@ -29,8 +31,7 @@ public:
     void SetCallback(Callback cb) { callback_ = std::move(cb); }
 
     // Assigns binding.id = 1..N and registers. Partial success OK.
-    bool RegisterAll(HWND hwnd, std::vector<HotkeyBinding> bindings,
-                     std::wstring* error = nullptr);
+    bool RegisterAll(HWND hwnd, std::vector<HotkeyBinding> bindings, std::wstring* error = nullptr);
 
     void UnregisterAll();
 

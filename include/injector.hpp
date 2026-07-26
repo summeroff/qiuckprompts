@@ -2,7 +2,8 @@
 
 #include <string>
 
-namespace qp {
+namespace qp
+{
 
 // Insert Unicode text into the foreground window.
 // Strategy:
@@ -13,7 +14,8 @@ namespace qp {
 //   5) delayed clipboard restore
 //   6) KEYEVENTF_UNICODE fallback if paste SendInput failed
 // Message-thread only.
-class TextInjector {
+class TextInjector
+{
 public:
     explicit TextInjector(int pasteDelayMs = 200);
 

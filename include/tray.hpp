@@ -6,20 +6,23 @@
 #include <functional>
 #include <string>
 
-namespace qp {
+namespace qp
+{
 
-class TrayIcon {
+class TrayIcon
+{
 public:
     static constexpr UINT WM_TRAYICON = WM_APP + 1;
 
-    enum MenuId : UINT {
-        IdExit              = 1001,
-        IdOpenLog           = 1002,
-        IdAbout             = 1003,
-        IdListHotkeys       = 1004,
-        IdToggleInsertOnly  = 1005,
-        IdSampleTitles      = 1006,
-        IdOpenTitlesLog     = 1007,
+    enum MenuId : UINT
+    {
+        IdExit = 1001,
+        IdOpenLog = 1002,
+        IdAbout = 1003,
+        IdListHotkeys = 1004,
+        IdToggleInsertOnly = 1005,
+        IdSampleTitles = 1006,
+        IdOpenTitlesLog = 1007,
     };
 
     TrayIcon() = default;

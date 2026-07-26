@@ -7,16 +7,21 @@
 #include <cstdio>
 #include <string>
 
-namespace {
+namespace
+{
 
-bool HasFlag(int argc, wchar_t** argv, const wchar_t* flag) {
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i] && wcscmp(argv[i], flag) == 0) return true;
+bool HasFlag(int argc, wchar_t** argv, const wchar_t* flag)
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        if (argv[i] && wcscmp(argv[i], flag) == 0)
+            return true;
     }
     return false;
 }
 
-void PrintHelp() {
+void PrintHelp()
+{
     const wchar_t* help =
         L"QiuckPrompts — tray hotkeys → AI chat workflow\n"
         L"\n"
@@ -59,49 +64,58 @@ void PrintHelp() {
         L"\n"
         L"Edit templates/hotkeys in include/config.hpp and rebuild.\n";
 
-    if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole()) {
+    if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole())
+    {
         FILE* f = nullptr;
         freopen_s(&f, "CONOUT$", "w", stdout);
         fwprintf(stdout, L"%s", help);
         FreeConsole();
-    } else {
+    } else
+    {
         MessageBoxW(nullptr, help, QP_APP_DISPLAY_W, MB_OK | MB_ICONINFORMATION);
     }
 }
 
 } // namespace
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+{
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    if (!argv) {
+    if (!argv)
+    {
         argc = 0;
     }
 
     int code = 0;
 
-    if (HasFlag(argc, argv, L"--help") || HasFlag(argc, argv, L"-h") ||
-        HasFlag(argc, argv, L"/?")) {
+    if (HasFlag(argc, argv, L"--help") || HasFlag(argc, argv, L"-h") || HasFlag(argc, argv, L"/?"))
+    {
         PrintHelp();
-        if (argv) LocalFree(argv);
+        if (argv)
+            LocalFree(argv);
         return 0;
     }
 
-    if (HasFlag(argc, argv, L"--self-test")) {
-        if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+    if (HasFlag(argc, argv, L"--self-test"))
+    {
+        if (!AttachConsole(ATTACH_PARENT_PROCESS))
+        {
             AllocConsole();
         }
         FILE* f = nullptr;
         freopen_s(&f, "CONOUT$", "w", stdout);
         freopen_s(&f, "CONOUT$", "w", stderr);
         code = qp::App::RunSelfTest();
-        if (argv) LocalFree(argv);
+        if (argv)
+            LocalFree(argv);
         return code;
     }
 
     qp::App app;
     code = app.Run(instance, argc, argv ? argv : nullptr);
 
-    if (argv) LocalFree(argv);
+    if (argv)
+        LocalFree(argv);
     return code;
 }

@@ -11,16 +11,20 @@
 #include <cstring>
 #include <string>
 
-namespace qp {
+namespace qp
+{
 
-namespace {
+namespace
+{
 App* g_app = nullptr;
 }
 
-App::~App() {
+App::~App()
+{
     tray_.Destroy();
     hotkeys_.UnregisterAll();
-    if (hwnd_) {
+    if (hwnd_)
+    {
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
     }
@@ -28,23 +32,29 @@ App::~App() {
     g_app = nullptr;
 }
 
-LRESULT CALLBACK App::StaticWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK App::StaticWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
     App* self = nullptr;
-    if (msg == WM_NCCREATE) {
+    if (msg == WM_NCCREATE)
+    {
         auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
         self = static_cast<App*>(cs->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-    } else {
+    } else
+    {
         self = reinterpret_cast<App*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
-    if (self) {
+    if (self)
+    {
         return self->WndProc(hwnd, msg, wParam, lParam);
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    switch (msg) {
+LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
     case TrayIcon::WM_TRAYICON:
         tray_.OnTrayMessage(wParam, lParam);
         return 0;
@@ -71,7 +81,8 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-bool App::CreateMessageWindow(std::wstring* error) {
+bool App::CreateMessageWindow(std::wstring* error)
+{
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = StaticWndProc;
@@ -81,24 +92,21 @@ bool App::CreateMessageWindow(std::wstring* error) {
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
 
     const ATOM atom = RegisterClassExW(&wc);
-    if (!atom && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-        if (error) *error = L"RegisterClassEx failed: " + LastErrorMessage();
+    if (!atom && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+    {
+        if (error)
+            *error = L"RegisterClassEx failed: " + LastErrorMessage();
         return false;
     }
 
-    hwnd_ = CreateWindowExW(
-        0,
-        QP_WND_CLASS_W,
-        QP_APP_DISPLAY_W,
-        WS_OVERLAPPED,
-        0, 0, 0, 0,
-        HWND_MESSAGE, // message-only window
-        nullptr,
-        instance_,
-        this);
+    hwnd_ = CreateWindowExW(0, QP_WND_CLASS_W, QP_APP_DISPLAY_W, WS_OVERLAPPED, 0, 0, 0, 0,
+                            HWND_MESSAGE, // message-only window
+                            nullptr, instance_, this);
 
-    if (!hwnd_) {
-        if (error) *error = L"CreateWindowEx failed: " + LastErrorMessage();
+    if (!hwnd_)
+    {
+        if (error)
+            *error = L"CreateWindowEx failed: " + LastErrorMessage();
         return false;
     }
 
@@ -106,58 +114,61 @@ bool App::CreateMessageWindow(std::wstring* error) {
     return true;
 }
 
-bool App::InitTray(std::wstring* error) {
-    std::wstring tip = std::wstring(QP_APP_DISPLAY_W) + L" v" +
-                       Utf8ToWide(QP_VERSION_STRING);
-    if (!tray_.Create(instance_, hwnd_, tip, error)) {
+bool App::InitTray(std::wstring* error)
+{
+    std::wstring tip = std::wstring(QP_APP_DISPLAY_W) + L" v" + Utf8ToWide(QP_VERSION_STRING);
+    if (!tray_.Create(instance_, hwnd_, tip, error))
+    {
         return false;
     }
     tray_.SetMenuHandler([this](UINT cmd) { OnMenuCommand(cmd); });
     return true;
 }
 
-bool App::RegisterHotkeys(std::wstring* error) {
+bool App::RegisterHotkeys(std::wstring* error)
+{
     hotkeys_.SetTriggerMode(cfg_.hotkeyTrigger);
     hotkeys_.SetReleaseTimeoutMs(cfg_.hotkeyReleaseTimeoutMs);
     hotkeys_.SetReleasePollMs(cfg_.hotkeyReleasePollMs);
     hotkeys_.SetCallback([this](int id, const HotkeyBinding& b) { OnHotkey(id, b); });
-    if (cfg_.bindings.empty()) {
+    if (cfg_.bindings.empty())
+    {
         GetBuiltinBindings(cfg_.bindings);
     }
     return hotkeys_.RegisterAll(hwnd_, cfg_.bindings, error);
 }
 
-void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
+void App::OnHotkey(int /*id*/, const HotkeyBinding& binding)
+{
     // Re-entrancy guard: SendToAi can take seconds; ignore nested fires.
-    if (hotkeys_.Busy()) {
+    if (hotkeys_.Busy())
+    {
         QP_LOG_WARN(L"hotkey: nested fire ignored (%s)", binding.hotkey.display.c_str());
         return;
     }
     hotkeys_.SetBusy(true);
 
-    QP_LOG_INFO(L"hotkey fired: %s (%s) -> template '%s' action=%s",
-                binding.hotkey.display.c_str(),
-                binding.label.c_str(),
-                binding.templateId.c_str(),
-                ActionKindName(binding.action));
+    QP_LOG_INFO(L"hotkey fired: %s (%s) -> template '%s' action=%s", binding.hotkey.display.c_str(),
+                binding.label.c_str(), binding.templateId.c_str(), ActionKindName(binding.action));
 
     // Capture titles at the moment the action starts (source editor, etc.)
     LogForegroundTitle(L"hotkey_fire", binding.hotkey.display);
     LogBrowserTitleSweep(L"hotkey_fire_sweep");
 
     std::wstring body = binding.promptBody;
-    if (body.empty()) {
+    if (body.empty())
+    {
         QP_LOG_ERROR(L"empty prompt for binding '%s'", binding.name.c_str());
         hotkeys_.SetBusy(false);
         return;
     }
 
-    const ActionKind action =
-        cfg_.forceInsertOnly ? ActionKind::InsertTemplate : binding.action;
+    const ActionKind action = cfg_.forceInsertOnly ? ActionKind::InsertTemplate : binding.action;
 
     std::wstring err;
     bool ok = false;
-    if (action == ActionKind::SendToAi) {
+    if (action == ActionKind::SendToAi)
+    {
         WorkflowRequest req;
         req.promptBody = body;
         req.aiUrl = binding.aiUrl;
@@ -168,13 +179,14 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
         req.service = binding.service;
         req.label = binding.label;
         ok = workflow_.Run(req, &err);
-    } else {
+    } else
+    {
         ok = injector_.Inject(body, &err);
     }
 
-    if (!ok) {
-        QP_LOG_ERROR(L"action failed for '%s': %s",
-                     binding.templateId.c_str(), err.c_str());
+    if (!ok)
+    {
+        QP_LOG_ERROR(L"action failed for '%s': %s", binding.templateId.c_str(), err.c_str());
     }
 
     // After workflow: what is focused / browser titles look like now?
@@ -184,15 +196,19 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding) {
     hotkeys_.SetBusy(false);
 }
 
-void App::OnMenuCommand(UINT cmd) {
-    switch (cmd) {
+void App::OnMenuCommand(UINT cmd)
+{
+    switch (cmd)
+    {
     case TrayIcon::IdExit:
         QP_LOG_INFO(L"exit requested from tray");
         PostMessageW(hwnd_, WM_CLOSE, 0, 0);
         break;
     case TrayIcon::IdOpenLog:
-        if (!logPath_.empty()) {
-            if (!OpenTextFile(logPath_)) {
+        if (!logPath_.empty())
+        {
+            if (!OpenTextFile(logPath_))
+            {
                 OpenInExplorer(logPath_);
             }
         }
@@ -207,9 +223,10 @@ void App::OnMenuCommand(UINT cmd) {
         cfg_.forceInsertOnly = !cfg_.forceInsertOnly;
         QP_LOG_INFO(L"forceInsertOnly=%d", cfg_.forceInsertOnly ? 1 : 0);
         {
-            std::wstring tip = std::wstring(QP_APP_DISPLAY_W) + L" v" +
-                               Utf8ToWide(QP_VERSION_STRING);
-            if (cfg_.forceInsertOnly) tip += L" [insert-only]";
+            std::wstring tip =
+                std::wstring(QP_APP_DISPLAY_W) + L" v" + Utf8ToWide(QP_VERSION_STRING);
+            if (cfg_.forceInsertOnly)
+                tip += L" [insert-only]";
             tray_.SetTooltip(tip);
         }
         break;
@@ -219,9 +236,12 @@ void App::OnMenuCommand(UINT cmd) {
         break;
     case TrayIcon::IdOpenTitlesLog: {
         const std::wstring& p = TitleSampleLogPath();
-        if (!p.empty()) {
-            if (!OpenTextFile(p)) OpenInExplorer(p);
-        } else if (!logPath_.empty()) {
+        if (!p.empty())
+        {
+            if (!OpenTextFile(p))
+                OpenInExplorer(p);
+        } else if (!logPath_.empty())
+        {
             OpenInExplorer(logPath_);
         }
         break;
@@ -231,7 +251,8 @@ void App::OnMenuCommand(UINT cmd) {
     }
 }
 
-void App::ShowAbout() {
+void App::ShowAbout()
+{
     std::wstring text;
     text += QP_APP_DISPLAY_W;
     text += L" v";
@@ -254,48 +275,58 @@ void App::ShowAbout() {
     MessageBoxW(nullptr, text.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONINFORMATION);
 }
 
-void App::ShowHotkeyList() {
+void App::ShowHotkeyList()
+{
     std::wstring text = L"Active hotkeys:\n\n";
-    for (const auto& b : hotkeys_.Bindings()) {
+    for (const auto& b : hotkeys_.Bindings())
+    {
         text += b.hotkey.display;
         text += L"  —  ";
         text += b.label;
         text += L"  [";
         text += b.name.empty() ? b.templateId : b.name;
         text += L"]  ";
-        if (!b.service.empty()) {
+        if (!b.service.empty())
+        {
             text += b.service;
             text += L"  ";
         }
         text += ActionKindName(b.action);
-        if (b.requireClipboardImage) text += L"  [image]";
+        if (b.requireClipboardImage)
+            text += L"  [image]";
         text += L"\n";
     }
-    if (hotkeys_.Bindings().empty()) {
+    if (hotkeys_.Bindings().empty())
+    {
         text += L"(none registered)\n";
     }
     text += L"\nLeft hand: Ctrl+Alt   Right hand: J K L I O";
     text += L"\nTrigger: ";
     text += HotkeyTriggerModeName(cfg_.hotkeyTrigger);
     text += L" (action runs after you let go)";
-    if (cfg_.forceInsertOnly) {
+    if (cfg_.forceInsertOnly)
+    {
         text += L"\n(currently forced insert-only via tray toggle)";
     }
     MessageBoxW(nullptr, text.c_str(), L"Hotkeys", MB_OK | MB_ICONINFORMATION);
 }
 
-int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
+int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
+{
     instance_ = instance;
     g_app = this;
 
     std::wstring err;
-    if (!ParseCommandLine(argc, argv, cfg_, &err)) {
+    if (!ParseCommandLine(argc, argv, cfg_, &err))
+    {
         MessageBoxW(nullptr, err.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONERROR);
         return 2;
     }
 
-    if (cfg_.console) {
-        if (AllocConsole()) {
+    if (cfg_.console)
+    {
+        if (AllocConsole())
+        {
             FILE* f = nullptr;
             freopen_s(&f, "CONOUT$", "w", stdout);
             freopen_s(&f, "CONOUT$", "w", stderr);
@@ -303,7 +334,8 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
         }
     }
 
-    if (!single_.Acquire(QP_MUTEX_NAME_W)) {
+    if (!single_.Acquire(QP_MUTEX_NAME_W))
+    {
         MessageBoxW(nullptr,
                     L"QiuckPrompts is already running.\n"
                     L"Check the notification area (system tray).",
@@ -313,7 +345,8 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
 
     // Log path default: <exe>/logs/qiuckprompts.log  (portable, easy to find while developing)
     logPath_ = cfg_.logPath;
-    if (logPath_.empty()) {
+    if (logPath_.empty())
+    {
         logPath_ = PathJoin({GetExeDir(), L"logs", L"qiuckprompts.log"});
     }
 
@@ -325,35 +358,31 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
         SetTitleSampleLogPath(titlesPath);
     }
 
-    QP_LOG_INFO(L"=== %s v%s starting ===", QP_APP_DISPLAY_W, Utf8ToWide(QP_VERSION_STRING).c_str());
+    QP_LOG_INFO(L"=== %s v%s starting ===", QP_APP_DISPLAY_W,
+                Utf8ToWide(QP_VERSION_STRING).c_str());
     QP_LOG_INFO(L"exe=%s", GetExePath().c_str());
-    QP_LOG_INFO(L"log=%s level=%s pasteDelayMs=%d insertOnly=%d",
-                logPath_.c_str(),
-                Logger::LevelName(cfg_.logLevel),
-                cfg_.pasteDelayMs,
-                cfg_.forceInsertOnly ? 1 : 0);
+    QP_LOG_INFO(L"log=%s level=%s pasteDelayMs=%d insertOnly=%d", logPath_.c_str(),
+                Logger::LevelName(cfg_.logLevel), cfg_.pasteDelayMs, cfg_.forceInsertOnly ? 1 : 0);
     QP_LOG_INFO(L"titles.log=%s  (grep TITLE_SAMPLE)", TitleSampleLogPath().c_str());
     QP_LOG_INFO(L"hotkey trigger=%s releaseTimeoutMs=%d pollMs=%d",
-                HotkeyTriggerModeName(cfg_.hotkeyTrigger),
-                cfg_.hotkeyReleaseTimeoutMs,
+                HotkeyTriggerModeName(cfg_.hotkeyTrigger), cfg_.hotkeyReleaseTimeoutMs,
                 cfg_.hotkeyReleasePollMs);
     QP_LOG_INFO(L"workflow aiUrl=%s browserHint=%s pageReadyTimeoutMs=%d uia=%d",
-                cfg_.workflow.defaultAiUrl.c_str(),
-                cfg_.workflow.browserTitleHint.c_str(),
-                cfg_.workflow.pageReadyTimeoutMs,
-                cfg_.workflow.pageReadyUseUia ? 1 : 0);
+                cfg_.workflow.defaultAiUrl.c_str(), cfg_.workflow.browserTitleHint.c_str(),
+                cfg_.workflow.pageReadyTimeoutMs, cfg_.workflow.pageReadyUseUia ? 1 : 0);
 
     // Load bindings from config file (hotkey + prompt + service URL).
     {
         std::wstring cerr;
         const std::wstring tryPath = cfg_.configPath; // may be set by --config
-        if (!LoadConfigFile(tryPath, cfg_, &cerr)) {
-            QP_LOG_WARN(L"config file not loaded (%s) — using built-in bindings",
-                        cerr.c_str());
+        if (!LoadConfigFile(tryPath, cfg_, &cerr))
+        {
+            QP_LOG_WARN(L"config file not loaded (%s) — using built-in bindings", cerr.c_str());
             GetBuiltinBindings(cfg_.bindings);
-        } else {
-            QP_LOG_INFO(L"config loaded: %s (%zu bindings)",
-                        cfg_.configPath.c_str(), cfg_.bindings.size());
+        } else
+        {
+            QP_LOG_INFO(L"config loaded: %s (%zu bindings)", cfg_.configPath.c_str(),
+                        cfg_.bindings.size());
         }
     }
 
@@ -364,19 +393,22 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
     injector_.SetPasteDelayMs(cfg_.pasteDelayMs);
     workflow_.SetConfig(cfg_.workflow);
 
-    if (!CreateMessageWindow(&err)) {
+    if (!CreateMessageWindow(&err))
+    {
         QP_LOG_ERROR(L"%s", err.c_str());
         MessageBoxW(nullptr, err.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONERROR);
         return 3;
     }
 
-    if (!InitTray(&err)) {
+    if (!InitTray(&err))
+    {
         QP_LOG_ERROR(L"%s", err.c_str());
         MessageBoxW(nullptr, err.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONERROR);
         return 4;
     }
 
-    if (!RegisterHotkeys(&err)) {
+    if (!RegisterHotkeys(&err))
+    {
         QP_LOG_ERROR(L"hotkey registration failed: %s", err.c_str());
         MessageBoxW(nullptr,
                     (L"Failed to register hotkeys:\n" + err +
@@ -385,21 +417,23 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
                         .c_str(),
                     QP_APP_DISPLAY_W, MB_OK | MB_ICONWARNING);
         // Continue running so user can still open About / Exit from tray.
-    } else {
+    } else
+    {
         QP_LOG_INFO(L"%zu hotkey(s) active", hotkeys_.RegisteredCount());
     }
 
     // Dump bindings at debug level for traceability
-    for (const auto& b : hotkeys_.Bindings()) {
-        QP_LOG_DEBUG(L"  binding id=%d %s -> %s (%s)",
-                     b.id, b.hotkey.display.c_str(), b.templateId.c_str(),
-                     ActionKindName(b.action));
+    for (const auto& b : hotkeys_.Bindings())
+    {
+        QP_LOG_DEBUG(L"  binding id=%d %s -> %s (%s)", b.id, b.hotkey.display.c_str(),
+                     b.templateId.c_str(), ActionKindName(b.action));
     }
 
     QP_LOG_INFO(L"ready — message loop");
 
     MSG msg{};
-    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+    while (GetMessageW(&msg, nullptr, 0, 0) > 0)
+    {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
@@ -411,15 +445,18 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv) {
     return static_cast<int>(msg.wParam);
 }
 
-int App::RunSelfTest() {
+int App::RunSelfTest()
+{
     // Headless checks — no tray, no message loop. Returns 0 on success.
     int failures = 0;
 
     auto expect = [&](bool cond, const wchar_t* name) {
-        if (!cond) {
+        if (!cond)
+        {
             wprintf(L"[FAIL] %s\n", name);
             ++failures;
-        } else {
+        } else
+        {
             wprintf(L"[ OK ] %s\n", name);
         }
     };
@@ -429,7 +466,8 @@ int App::RunSelfTest() {
     std::vector<HotkeyBinding> bindings;
     GetBuiltinBindings(bindings);
     expect(!bindings.empty(), L"builtin bindings non-empty");
-    for (const auto& b : bindings) {
+    for (const auto& b : bindings)
+    {
         expect(b.hotkey.vk != 0, L"binding vk non-zero");
         expect(!b.name.empty() || !b.templateId.empty(), L"binding name set");
         expect(!b.promptBody.empty(), L"binding prompt non-empty");
@@ -481,23 +519,28 @@ int App::RunSelfTest() {
 
     // Load sample config from source tree if present
     {
-        const std::wstring srcIni = PathJoin({GetExeDir(), L"..", L"..", L"config", L"qiuckprompts.ini"});
-        // Also try repo-relative via cwd
-        std::wstring try1 = L"config\qiuckprompts.ini";
-        std::wstring try2 = PathJoin(GetExeDir(), L"config\qiuckprompts.ini");
         AppConfig loaded;
         std::wstring err;
-        bool ok = LoadConfigFile(try2, loaded, &err);
-        if (!ok) ok = LoadConfigFile(L"C:\work\\repos\\qiuckprompts\\config\qiuckprompts.ini", loaded, &err);
-        if (ok) {
+        const std::wstring tryBesideExe = PathJoin(GetExeDir(), L"config/qiuckprompts.ini");
+        bool ok = LoadConfigFile(tryBesideExe, loaded, &err);
+        if (!ok)
+        {
+            ok =
+                LoadConfigFile(L"C:/work/repos/qiuckprompts/config/qiuckprompts.ini", loaded, &err);
+        }
+        if (ok)
+        {
             expect(!loaded.bindings.empty(), L"LoadConfigFile bindings");
             bool hasShot = false;
-            for (const auto& b : loaded.bindings) {
-                if (b.requireClipboardImage) hasShot = true;
+            for (const auto& b : loaded.bindings)
+            {
+                if (b.requireClipboardImage)
+                    hasShot = true;
             }
             expect(hasShot, L"config has screenshot binding");
             wprintf(L"[ OK ] LoadConfigFile (%zu bindings)\n", loaded.bindings.size());
-        } else {
+        } else
+        {
             wprintf(L"[SKIP] LoadConfigFile (%s)\n", err.c_str());
         }
     }
@@ -512,7 +555,8 @@ int App::RunSelfTest() {
         std::wstring err;
         expect(ClipboardWriteUnicode(sample, &err), L"ClipboardWriteUnicode");
         std::wstring got;
-        expect(ClipboardReadUnicode(got, &err) && got == sample, L"ClipboardReadUnicode round-trip");
+        expect(ClipboardReadUnicode(got, &err) && got == sample,
+               L"ClipboardReadUnicode round-trip");
     }
 
     expect(!GetExeDir().empty(), L"GetExeDir");

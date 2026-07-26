@@ -6,70 +6,85 @@
 #include <string>
 #include <vector>
 
-namespace qp {
+namespace qp
+{
 
-enum class ActionKind {
+enum class ActionKind
+{
     InsertTemplate = 0,
     SendToAi = 1,
 };
 
-enum class HotkeyTriggerMode {
+enum class HotkeyTriggerMode
+{
     OnPress = 0,
     OnRelease = 1,
 };
 
-inline const wchar_t* HotkeyTriggerModeName(HotkeyTriggerMode m) {
-    switch (m) {
-    case HotkeyTriggerMode::OnPress:   return L"OnPress";
-    case HotkeyTriggerMode::OnRelease: return L"OnRelease";
-    default:                           return L"?";
+inline const wchar_t* HotkeyTriggerModeName(HotkeyTriggerMode m)
+{
+    switch (m)
+    {
+    case HotkeyTriggerMode::OnPress:
+        return L"OnPress";
+    case HotkeyTriggerMode::OnRelease:
+        return L"OnRelease";
+    default:
+        return L"?";
     }
 }
 
-inline const wchar_t* ActionKindName(ActionKind k) {
-    switch (k) {
-    case ActionKind::InsertTemplate: return L"InsertTemplate";
-    case ActionKind::SendToAi:       return L"SendToAi";
-    default:                         return L"?";
+inline const wchar_t* ActionKindName(ActionKind k)
+{
+    switch (k)
+    {
+    case ActionKind::InsertTemplate:
+        return L"InsertTemplate";
+    case ActionKind::SendToAi:
+        return L"SendToAi";
+    default:
+        return L"?";
     }
 }
 
 // One hotkey = one service URL + one prompt (+ optional image mode).
-struct HotkeyBinding {
+struct HotkeyBinding
+{
     HotkeySpec hotkey;
-    std::wstring name;           // ini section id
+    std::wstring name; // ini section id
     std::wstring label;
-    std::wstring service;        // meta | gemini | grok | ...
-    std::wstring templateId;     // alias of name (compat)
+    std::wstring service;    // meta | gemini | grok | ...
+    std::wstring templateId; // alias of name (compat)
     ActionKind action = ActionKind::SendToAi;
     std::wstring aiUrl;
-    std::wstring pageTitleHint;  // empty => derive from URL
-    std::wstring promptBody;     // loaded from prompt file or inline
+    std::wstring pageTitleHint; // empty => derive from URL
+    std::wstring promptBody;    // loaded from prompt file or inline
     bool captureEditor = true;
     bool requireClipboardImage = false;
     bool fenceEditorText = true;
-    int id = 0;                  // RegisterHotKey id
+    int id = 0; // RegisterHotKey id
 };
 
-struct WorkflowConfig {
+struct WorkflowConfig
+{
     std::wstring browserTitleHint = L"Chrome";
     std::wstring defaultAiUrl = L"https://www.meta.ai/";
     std::wstring pageTitleHint;
 
     int afterModifierReleaseMs = 40;
-    int afterSelectAllMs       = 40;
-    int afterCopyMs            = 80;
+    int afterSelectAllMs = 40;
+    int afterCopyMs = 80;
     int afterActivateBrowserMs = 200;
-    int afterNewTabMs          = 250;
-    int afterUrlPasteMs        = 80;
-    int afterFinalPasteMs      = 300;
-    int afterImagePasteMs      = 350;
+    int afterNewTabMs = 250;
+    int afterUrlPasteMs = 80;
+    int afterFinalPasteMs = 300;
+    int afterImagePasteMs = 350;
 
     int pageReadyTimeoutMs = 15000;
-    int pageReadyPollMs    = 150;
-    int pageReadyMinMs     = 500;
-    int pageReadySettleMs  = 200;
-    bool pageReadyUseUia   = true;
+    int pageReadyPollMs = 150;
+    int pageReadyMinMs = 500;
+    int pageReadySettleMs = 200;
+    bool pageReadyUseUia = true;
     bool pasteEvenIfNotReady = true;
     bool fenceEditorText = true;
 
@@ -85,7 +100,8 @@ struct WorkflowConfig {
     bool pasteTextViaUnicode = false;
 };
 
-struct AppConfig {
+struct AppConfig
+{
     std::wstring logPath;
     LogLevel logLevel = LogLevel::Debug;
     bool console = false;
@@ -95,14 +111,15 @@ struct AppConfig {
 
     HotkeyTriggerMode hotkeyTrigger = HotkeyTriggerMode::OnRelease;
     int hotkeyReleaseTimeoutMs = 3000;
-    int hotkeyReleasePollMs    = 15;
+    int hotkeyReleasePollMs = 15;
 
-    std::wstring configPath;     // resolved ini path
-    std::wstring configDir;      // directory containing ini + prompts/
+    std::wstring configPath; // resolved ini path
+    std::wstring configDir;  // directory containing ini + prompts/
     std::vector<HotkeyBinding> bindings;
 };
 
-inline HotkeySpec HK(UINT modifiers, UINT vk) {
+inline HotkeySpec HK(UINT modifiers, UINT vk)
+{
     HotkeySpec h;
     h.modifiers = modifiers | MOD_NOREPEAT;
     h.vk = vk;
@@ -123,8 +140,7 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
 bool ParseHotkey(const std::wstring& text, HotkeySpec& out, std::wstring* error = nullptr);
 
 // Expand {{TEXT}} / {{CONTEXT}} or fence-append editor body.
-std::wstring BuildPromptPayload(const std::wstring& promptTemplate,
-                                const std::wstring& editorText,
+std::wstring BuildPromptPayload(const std::wstring& promptTemplate, const std::wstring& editorText,
                                 bool fenceEditorText);
 
 } // namespace qp

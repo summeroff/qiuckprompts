@@ -9,9 +9,11 @@
 #include "util.hpp"
 #include "workflow.hpp"
 
-namespace qp {
+namespace qp
+{
 
-class App {
+class App
+{
 public:
     App() = default;
     ~App();
