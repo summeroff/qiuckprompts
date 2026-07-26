@@ -7,6 +7,8 @@
 #include "title_sample.hpp"
 #include "util.hpp"
 
+#include <algorithm>
+
 namespace qp {
 
 namespace {
@@ -211,6 +213,11 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error) {
     WaitModifiersReleased(200);
 
     // --- Paste into AI form ---
+    // IMPORTANT: Meta AI (and many SPAs) handle paste asynchronously and may
+    // re-read the clipboard after Ctrl+V returns. If we restore the user's old
+    // clipboard too soon, the form ends up with that old text and NO prompt.
+    // Prefer Unicode key injection for the text payload so the clipboard is
+    // not involved in the final paste at all.
     if (req.requireClipboardImage && !savedImage.empty()) {
         QP_LOG_INFO(L"workflow: paste image first");
         std::wstring ierr;
@@ -225,33 +232,74 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error) {
         if (cfg_.afterImagePasteMs > 0) {
             Sleep(static_cast<DWORD>(cfg_.afterImagePasteMs));
         }
+        // Image consumed; clear so restoreClip won't re-put image over text path.
+        // (We still want old user text restored at the end.)
+        savedImage = {};
     }
 
-    QP_LOG_INFO(L"workflow: paste text payload (%zu wchar)", payload.size());
-    if (!ClipboardWriteUnicode(payload, error)) {
-        restoreClip();
-        return fail(error && !error->empty() ? *error : L"clipboard payload write failed");
-    }
-    {
-        std::wstring verify;
-        if (ClipboardReadUnicode(verify, nullptr) && verify != payload) {
-            QP_LOG_WARN(L"workflow: clipboard verify mismatch — rewrite");
-            ClipboardWriteUnicode(payload, nullptr);
-        }
-    }
-    if (!SendPaste(error)) {
-        QP_LOG_WARN(L"workflow: Ctrl+V text failed, unicode fallback");
+    bool usedClipboardForText = false;
+    QP_LOG_INFO(L"workflow: deliver text payload (%zu wchar) via=%s preview='%s'",
+                payload.size(),
+                cfg_.pasteTextViaUnicode ? L"unicode" : L"clipboard",
+                PayloadPreview(payload, 120).c_str());
+
+    if (cfg_.pasteTextViaUnicode) {
+        // Direct typing into focused composer — clipboard untouched.
         if (!SendUnicodeText(payload, error)) {
+            QP_LOG_WARN(L"workflow: unicode type failed — falling back to clipboard paste");
+            if (!ClipboardWriteUnicode(payload, error)) {
+                restoreClip();
+                return fail(error && !error->empty() ? *error : L"clipboard payload write failed");
+            }
+            usedClipboardForText = true;
+            if (!SendPaste(error)) {
+                restoreClip();
+                return fail(error && !error->empty() ? *error : L"payload paste failed");
+            }
+        }
+    } else {
+        if (!ClipboardWriteUnicode(payload, error)) {
             restoreClip();
-            return fail(error && !error->empty() ? *error : L"payload paste failed");
+            return fail(error && !error->empty() ? *error : L"clipboard payload write failed");
+        }
+        {
+            std::wstring verify;
+            if (ClipboardReadUnicode(verify, nullptr) && verify != payload) {
+                QP_LOG_WARN(L"workflow: clipboard verify mismatch — rewrite");
+                ClipboardWriteUnicode(payload, nullptr);
+            }
+        }
+        if (!SendPaste(error)) {
+            QP_LOG_WARN(L"workflow: Ctrl+V text failed, unicode fallback");
+            if (!SendUnicodeText(payload, error)) {
+                restoreClip();
+                return fail(error && !error->empty() ? *error : L"payload paste failed");
+            }
+        } else {
+            usedClipboardForText = true;
         }
     }
 
     if (cfg_.afterFinalPasteMs > 0) Sleep(static_cast<DWORD>(cfg_.afterFinalPasteMs));
-    if (cfg_.clipboardRestoreDelayMs > 0) {
-        Sleep(static_cast<DWORD>(cfg_.clipboardRestoreDelayMs));
+
+    // Only wait to restore clipboard if we actually used it for the text paste
+    // (or still hold a saved image). Otherwise restore immediately is fine.
+    if (usedClipboardForText || !savedImage.empty()) {
+        const int delay = (std::max)(cfg_.clipboardRestoreDelayMs, 1500);
+        QP_LOG_INFO(L"workflow: holding clipboard %dms before restore (usedClipText=%d)",
+                    delay, usedClipboardForText ? 1 : 0);
+        // Keep PAYLOAD on clipboard during the hold so a late SPA read still
+        // gets the full prompt+text, not the user's previous clip.
+        if (usedClipboardForText) {
+            ClipboardWriteUnicode(payload, nullptr);
+        }
+        Sleep(static_cast<DWORD>(delay));
     }
 
+    if (!userClipText.empty()) {
+        QP_LOG_DEBUG(L"workflow: restoring user clipboard (%zu wchar) preview='%s'",
+                     userClipText.size(), PayloadPreview(userClipText, 60).c_str());
+    }
     restoreClip();
     QP_LOG_INFO(L"workflow: DONE");
     return true;
