@@ -5,14 +5,16 @@
 
 #include "resource.h"
 
-namespace qp {
+namespace qp
+{
 
-TrayIcon::~TrayIcon() {
+TrayIcon::~TrayIcon()
+{
     Destroy();
 }
 
-bool TrayIcon::Create(HINSTANCE instance, HWND hwnd, const std::wstring& tip,
-                      std::wstring* error) {
+bool TrayIcon::Create(HINSTANCE instance, HWND hwnd, const std::wstring& tip, std::wstring* error)
+{
     Destroy();
     instance_ = instance;
     hwnd_ = hwnd;
@@ -25,24 +27,28 @@ bool TrayIcon::Create(HINSTANCE instance, HWND hwnd, const std::wstring& tip,
     nid_.uCallbackMessage = WM_TRAYICON;
 
     // Prefer LoadImage for proper tray-sized icon from resource.
-    nid_.hIcon = static_cast<HICON>(LoadImageW(
-        instance_, MAKEINTRESOURCEW(IDI_APPICON), IMAGE_ICON,
-        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
-        LR_DEFAULTCOLOR));
-    if (!nid_.hIcon) {
+    nid_.hIcon = static_cast<HICON>(LoadImageW(instance_, MAKEINTRESOURCEW(IDI_APPICON), IMAGE_ICON,
+                                               GetSystemMetrics(SM_CXSMICON),
+                                               GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
+    if (!nid_.hIcon)
+    {
         nid_.hIcon = LoadIconW(instance_, MAKEINTRESOURCEW(IDI_APPICON));
     }
-    if (!nid_.hIcon) {
+    if (!nid_.hIcon)
+    {
         nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
         QP_LOG_WARN(L"tray: custom icon missing, using IDI_APPLICATION");
-    } else {
+    } else
+    {
         QP_LOG_DEBUG(L"tray: loaded IDI_APPICON");
     }
 
     wcsncpy_s(nid_.szTip, tip.c_str(), _TRUNCATE);
 
-    if (!Shell_NotifyIconW(NIM_ADD, &nid_)) {
-        if (error) *error = L"Shell_NotifyIcon(NIM_ADD) failed: " + LastErrorMessage();
+    if (!Shell_NotifyIconW(NIM_ADD, &nid_))
+    {
+        if (error)
+            *error = L"Shell_NotifyIcon(NIM_ADD) failed: " + LastErrorMessage();
         QP_LOG_ERROR(L"%s", error ? error->c_str() : L"tray add failed");
         return false;
     }
@@ -56,13 +62,16 @@ bool TrayIcon::Create(HINSTANCE instance, HWND hwnd, const std::wstring& tip,
     return true;
 }
 
-void TrayIcon::Destroy() {
-    if (added_) {
+void TrayIcon::Destroy()
+{
+    if (added_)
+    {
         Shell_NotifyIconW(NIM_DELETE, &nid_);
         added_ = false;
         QP_LOG_DEBUG(L"tray icon removed");
     }
-    if (nid_.hIcon) {
+    if (nid_.hIcon)
+    {
         // Only destroy if we loaded from module resources (not shared stock icon).
         // LoadIcon from resource returns shared icon — do not DestroyIcon.
         nid_.hIcon = nullptr;
@@ -70,33 +79,41 @@ void TrayIcon::Destroy() {
     hwnd_ = nullptr;
 }
 
-void TrayIcon::SetTooltip(const std::wstring& tip) {
-    if (!added_) return;
+void TrayIcon::SetTooltip(const std::wstring& tip)
+{
+    if (!added_)
+        return;
     nid_.uFlags = NIF_TIP | NIF_SHOWTIP;
     wcsncpy_s(nid_.szTip, tip.c_str(), _TRUNCATE);
     Shell_NotifyIconW(NIM_MODIFY, &nid_);
 }
 
-void TrayIcon::OnTrayMessage(WPARAM /*wParam*/, LPARAM lParam) {
+void TrayIcon::OnTrayMessage(WPARAM /*wParam*/, LPARAM lParam)
+{
     const UINT mouseMsg = static_cast<UINT>(LOWORD(lParam));
-    switch (mouseMsg) {
+    switch (mouseMsg)
+    {
     case WM_RBUTTONUP:
     case WM_CONTEXTMENU:
         ShowContextMenu();
         break;
     case WM_LBUTTONDBLCLK:
-        if (menuHandler_) menuHandler_(IdAbout);
+        if (menuHandler_)
+            menuHandler_(IdAbout);
         break;
     default:
         break;
     }
 }
 
-void TrayIcon::ShowContextMenu() {
-    if (!hwnd_) return;
+void TrayIcon::ShowContextMenu()
+{
+    if (!hwnd_)
+        return;
 
     HMENU menu = CreatePopupMenu();
-    if (!menu) return;
+    if (!menu)
+        return;
 
     AppendMenuW(menu, MF_STRING, IdListHotkeys, L"List hotkeys");
     AppendMenuW(menu, MF_STRING, IdToggleInsertOnly, L"Toggle insert-only mode");
@@ -111,15 +128,15 @@ void TrayIcon::ShowContextMenu() {
     GetCursorPos(&pt);
     // Required so the menu dismisses correctly when clicking elsewhere.
     SetForegroundWindow(hwnd_);
-    const UINT cmd = TrackPopupMenu(menu,
-                                    TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
-                                    pt.x, pt.y, 0, hwnd_, nullptr);
+    const UINT cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON, pt.x,
+                                    pt.y, 0, hwnd_, nullptr);
     DestroyMenu(menu);
 
     // Per tray docs: post a dummy message so the menu closes properly.
     PostMessageW(hwnd_, WM_NULL, 0, 0);
 
-    if (cmd && menuHandler_) {
+    if (cmd && menuHandler_)
+    {
         QP_LOG_DEBUG(L"tray menu cmd=%u", cmd);
         menuHandler_(cmd);
     }

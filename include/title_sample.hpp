@@ -4,7 +4,8 @@
 
 #include <string>
 
-namespace qp {
+namespace qp
+{
 
 // Collect real window titles for future config (pageTitleHint, browser matching).
 // Lines are written to:
@@ -17,8 +18,7 @@ void SetTitleSampleLogPath(const std::wstring& path);
 const std::wstring& TitleSampleLogPath();
 
 // Sample one hwnd (title, class, pid, whether it is foreground).
-void LogTitleSample(const wchar_t* where, HWND hwnd,
-                    const std::wstring& note = {});
+void LogTitleSample(const wchar_t* where, HWND hwnd, const std::wstring& note = {});
 
 // Sample current foreground window.
 void LogForegroundTitle(const wchar_t* where, const std::wstring& note = {});

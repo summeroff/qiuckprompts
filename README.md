@@ -154,6 +154,15 @@ git push origin v0.2.0
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for branch/PR workflow and release checklist.
 
+## Code style
+
+See [CODING_STYLE.md](CODING_STYLE.md). Braces are Allman-style (`{` on its own line); `} else {` stays joined. CI runs `clang-format`.
+
+```bat
+scriptsormat.bat          :: apply
+scriptsormat.bat --check  :: CI-style check
+```
+
 ## Contributing
 
 Use feature branches and squash-merge PRs into `master` — details in [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,7 +1,8 @@
-# Build, test, and (on version tags) publish a Windows x64 release.
+# Build, test, format-check, and (on version tags) publish a Windows x64 release.
 #
-# CI:    push / PR → Debug build + --self-test
-# Rel:   push tag v* → RelWithDebInfo build + zip + GitHub Release
+# Jobs:
+#   format — clang-format dry-run against .clang-format (Allman braces, } else { ok)
+#   build  — VS 2022 Debug + --self-test; release zip on tags v*
 
 name: CI
 
@@ -16,9 +17,26 @@ permissions:
   contents: read
 
 jobs:
+  format:
+    name: Format (clang-format)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        run: |
+          chmod +x scripts/format.sh
+          ./scripts/format.sh --check
+
   build:
     name: Build & test (Windows x64)
-    # windows-2022 ships VS 2022; windows-latest may not.
+    needs: format
     runs-on: windows-2022
 
     permissions:
@@ -67,6 +85,7 @@ jobs:
           }
           if (Test-Path "README.md") { Copy-Item "README.md" "$dir/" }
           if (Test-Path "LICENSE")   { Copy-Item "LICENSE"   "$dir/" }
+          if (Test-Path "config")    { Copy-Item "config" "$dir/config" -Recurse }
           Compress-Archive -Path "$dir/*" -DestinationPath "$name.zip" -Force
           Get-Item "$name.zip" | Format-List Name, Length, FullName
 

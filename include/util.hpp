@@ -5,7 +5,8 @@
 #include <cstdint>
 #include <windows.h>
 
-namespace qp {
+namespace qp
+{
 
 // Paths
 std::wstring GetExeDir();
@@ -22,16 +23,17 @@ bool OpenTextFile(const std::wstring& path);
 
 // UTF-8 / wide
 std::wstring Utf8ToWide(const std::string& utf8);
-std::string  WideToUtf8(const std::wstring& wide);
+std::string WideToUtf8(const std::wstring& wide);
 
 std::wstring Trim(const std::wstring& s);
 std::wstring ToLower(const std::wstring& s);
 
 // Hotkey
-struct HotkeySpec {
-    UINT modifiers = 0;     // MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN [| MOD_NOREPEAT]
-    UINT vk = 0;            // virtual-key code
-    std::wstring display;   // "Ctrl+Alt+1"
+struct HotkeySpec
+{
+    UINT modifiers = 0;   // MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN [| MOD_NOREPEAT]
+    UINT vk = 0;          // virtual-key code
+    std::wstring display; // "Ctrl+Alt+1"
 };
 
 std::wstring FormatHotkeyDisplay(UINT modifiers, UINT vk);
@@ -41,7 +43,8 @@ std::wstring Win32ErrorMessage(DWORD code);
 std::wstring LastErrorMessage();
 
 // RAII single-instance mutex
-class SingleInstance {
+class SingleInstance
+{
 public:
     SingleInstance() = default;
     ~SingleInstance();

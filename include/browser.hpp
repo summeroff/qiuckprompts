@@ -4,9 +4,11 @@
 
 #include <string>
 
-namespace qp {
+namespace qp
+{
 
-struct BrowserTarget {
+struct BrowserTarget
+{
     HWND hwnd = nullptr;
     DWORD pid = 0;
     std::wstring title;
@@ -17,8 +19,7 @@ struct BrowserTarget {
 // Find best visible top-level browser window.
 // Prefers Chrome Beta (path/title), then any Chrome, then Edge.
 // titleHint e.g. L"Chrome Beta" (case-insensitive substring), may be empty.
-bool FindBrowserWindow(const std::wstring& titleHint,
-                       BrowserTarget& out,
+bool FindBrowserWindow(const std::wstring& titleHint, BrowserTarget& out,
                        std::wstring* error = nullptr);
 
 // Activate + restore. Uses ForceForeground.
