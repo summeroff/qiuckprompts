@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem format.bat [--check]
-rem Requires clang-format on PATH (LLVM) or common install locations.
+rem Requires clang-format on PATH (LLVM), hermes venv, or common install paths.
 
 set CHECK=0
 if /I "%~1"=="--check" set CHECK=1
@@ -13,38 +13,57 @@ cd /d "%~dp0.."
 if errorlevel 1 exit /b 1
 
 set "CF="
-where clang-format >nul 2>nul && set "CF=clang-format"
-if not defined CF if exist "C:\Program Files\LLVM\bin\clang-format.exe" set "CF=C:\Program Files\LLVM\bin\clang-format.exe"
-if not defined CF if exist "C:\Program Files (x86)\LLVM\bin\clang-format.exe" set "CF=C:\Program Files (x86)\LLVM\bin\clang-format.exe"
+rem Single where invocation (stderr suppressed); no-ops if not on PATH.
+for /f "delims=" %%I in ('where clang-format 2^>nul') do (
+  if not defined CF set "CF=%%I"
+)
+if not defined CF if exist "%LOCALAPPDATA%\hermes\hermes-agent\venv\Scripts\clang-format.exe" (
+  set "CF=%LOCALAPPDATA%\hermes\hermes-agent\venv\Scripts\clang-format.exe"
+)
+if not defined CF if exist "C:\Program Files\LLVM\bin\clang-format.exe" (
+  set "CF=C:\Program Files\LLVM\bin\clang-format.exe"
+)
+if not defined CF if exist "C:\Program Files (x86)\LLVM\bin\clang-format.exe" (
+  set "CF=C:\Program Files (x86)\LLVM\bin\clang-format.exe"
+)
 if not defined CF (
-  echo clang-format not found. Install LLVM or add clang-format to PATH.
+  echo clang-format not found. Put it on PATH or use one of:
   echo   winget install LLVM.LLVM
+  echo   uv pip install --python "%%LOCALAPPDATA%%\hermes\hermes-agent\venv\Scripts\python.exe" clang-format
+  echo   ^(auto-detected at %%LOCALAPPDATA%%\hermes\hermes-agent\venv\Scripts\clang-format.exe^)
+  echo   or: any clang-format.exe on PATH
   exit /b 2
 )
 
 set COUNT=0
 set FAIL=0
 
-for %%R in (src include) do (
-  if exist "%%R" (
-    for /R "%%R" %%F in (*.cpp *.hpp) do (
-      set /a COUNT+=1
-      if !CHECK! EQU 1 (
-        "%CF%" --dry-run --Werror --style=file "%%F"
-        if errorlevel 1 (
-          echo NEED FORMAT: %%F
-          set FAIL=1
+rem Enumerate with dir /s /b. Empty globs print "File Not Found" to *stdout*
+rem (not only stderr), so always require the path to exist as a file.
+for %%E in (cpp hpp) do (
+  for %%R in (src include) do (
+    if exist "%%R\." (
+      for /f "delims=" %%F in ('dir /s /b "%%R\*.%%E" 2^>nul') do (
+        if exist "%%~fF" if not exist "%%~fF\" (
+          set /a COUNT+=1
+          if !CHECK! EQU 1 (
+            "%CF%" --dry-run --Werror --style=file "%%~fF"
+            if errorlevel 1 (
+              echo NEED FORMAT: %%~fF
+              set FAIL=1
+            )
+          ) else (
+            "%CF%" -i --style=file "%%~fF"
+            if errorlevel 1 set FAIL=1
+          )
         )
-      ) else (
-        "%CF%" -i --style=file "%%F"
-        if errorlevel 1 set FAIL=1
       )
     )
   )
 )
 
 if !COUNT! EQU 0 (
-  echo No source files found.
+  echo No source files found under src\ and include\.
   exit /b 1
 )
 
