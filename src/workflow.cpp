@@ -219,22 +219,21 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error) {
         // Unicode path is fallback; it maps \n → VK_RETURN so lines still break.
         if (req.requireClipboardImage && !savedImage.empty()) {
             QP_LOG_INFO(L"workflow: paste image first");
-        std::wstring ierr;
-        if (!ClipboardRestoreImage(savedImage, &ierr)) {
-            restoreClip();
-            return fail(ierr.empty() ? L"restore image failed" : ierr);
+            std::wstring ierr;
+            if (!ClipboardRestoreImage(savedImage, &ierr)) {
+                restoreClip();
+                return fail(ierr.empty() ? L"restore image failed" : ierr);
+            }
+            if (!SendPaste(error)) {
+                restoreClip();
+                return fail(error && !error->empty() ? *error : L"paste image failed");
+            }
+            if (cfg_.afterImagePasteMs > 0) {
+                Sleep(static_cast<DWORD>(cfg_.afterImagePasteMs));
+            }
+            // Image consumed; clear so restoreClip won't re-put image over text path.
+            savedImage = {};
         }
-        if (!SendPaste(error)) {
-            restoreClip();
-            return fail(error && !error->empty() ? *error : L"paste image failed");
-        }
-        if (cfg_.afterImagePasteMs > 0) {
-            Sleep(static_cast<DWORD>(cfg_.afterImagePasteMs));
-        }
-        // Image consumed; clear so restoreClip won't re-put image over text path.
-        // (We still want old user text restored at the end.)
-        savedImage = {};
-    }
 
     bool usedClipboardForText = false;
     QP_LOG_INFO(L"workflow: deliver text payload (%zu wchar) via=%s preview='%s'",
