@@ -3,7 +3,6 @@
 #include <windows.h>
 
 #include <string>
-#include <vector>
 
 namespace qp
 {
@@ -14,13 +13,8 @@ struct PageReadyConfig
 
     // If non-empty, window title must contain this (case-insensitive), e.g. L"Meta".
     // Empty => any title that doesn't look like a blank/new tab is OK.
+    // Blank/new-tab titles are rejected in page_ready.cpp::LooksLikeNewTabTitle.
     std::wstring titleHint;
-
-    // Reject titles that mean "not navigated yet".
-    std::vector<std::wstring> titleReject = {
-        L"New Tab", L"new tab", L"Untitled", L"about:blank", L"Chrome Beta", L"Chrome Dev",
-        // bare browser name only (no page title yet) — kept loose; combined with other checks
-    };
 
     int timeoutMs = 15000; // hard stop
     int pollMs = 150;      // poll interval

@@ -196,7 +196,7 @@ bool FindBrowserWindow(const std::wstring& titleHint, BrowserTarget& out, std::w
             {
                 *error += L" (hint='" + titleHint + L"')";
             }
-            *error += L". Open Chrome Dev (or Chrome/Edge) and try again.";
+            *error += L". Open Chrome Dev/Beta (or Chrome/Edge) and try again.";
         }
         QP_LOG_ERROR(L"browser: no candidates (hint='%s')", titleHint.c_str());
         return false;
@@ -217,8 +217,8 @@ bool FindBrowserWindow(const std::wstring& titleHint, BrowserTarget& out, std::w
     }
 
     out = *best;
-    QP_LOG_INFO(L"browser: selected score=%d hwnd=%p title='%s'", out.score, out.hwnd,
-                out.title.c_str());
+    QP_LOG_INFO(L"browser: selected score=%d hwnd=%p title='%s' exe='%s'", out.score, out.hwnd,
+                out.title.c_str(), out.exePath.c_str());
     LogTitleSample(L"browser_selected", out.hwnd, out.exePath);
     return true;
 }
