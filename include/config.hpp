@@ -108,6 +108,7 @@ struct AppConfig
     int pasteDelayMs = 200;
     WorkflowConfig workflow;
     bool forceInsertOnly = false;
+    bool replaceRunning = false; // --replace-running: skip Yes/No, take over other instance
 
     HotkeyTriggerMode hotkeyTrigger = HotkeyTriggerMode::OnRelease;
     int hotkeyReleaseTimeoutMs = 3000;

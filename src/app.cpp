@@ -71,6 +71,11 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         OnMenuCommand(static_cast<UINT>(LOWORD(wParam)));
         return 0;
 
+    case WM_CLOSE:
+        // Tray Exit and second-instance takeover both land here.
+        DestroyWindow(hwnd);
+        return 0;
+
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -99,9 +104,9 @@ bool App::CreateMessageWindow(std::wstring* error)
         return false;
     }
 
-    hwnd_ = CreateWindowExW(0, QP_WND_CLASS_W, QP_APP_DISPLAY_W, WS_OVERLAPPED, 0, 0, 0, 0,
-                            HWND_MESSAGE, // message-only window
-                            nullptr, instance_, this);
+    // Hidden top-level (not HWND_MESSAGE) so a second launch can FindWindow + WM_CLOSE.
+    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, QP_WND_CLASS_W, QP_APP_DISPLAY_W,
+                            WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, instance_, this);
 
     if (!hwnd_)
     {
@@ -110,6 +115,7 @@ bool App::CreateMessageWindow(std::wstring* error)
         return false;
     }
 
+    ShowWindow(hwnd_, SW_HIDE);
     QP_LOG_DEBUG(L"message window created hwnd=%p", hwnd_);
     return true;
 }
@@ -334,13 +340,40 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         }
     }
 
-    if (!single_.Acquire(QP_MUTEX_NAME_W))
+    if (!single_.AcquireOrTakeOver(QP_MUTEX_NAME_W, QP_SHUTDOWN_EVENT_NAME_W, false, 0, nullptr))
     {
-        MessageBoxW(nullptr,
-                    L"QiuckPrompts is already running.\n"
-                    L"Check the notification area (system tray).",
-                    QP_APP_DISPLAY_W, MB_OK | MB_ICONINFORMATION);
-        return 0;
+        // Another instance is alive — offer to replace it (dev builds / other folder).
+        bool doTakeOver = cfg_.replaceRunning;
+        if (!doTakeOver)
+        {
+            const int choice =
+                MessageBoxW(nullptr,
+                            L"QiuckPrompts is already running.\n\n"
+                            L"Close the running instance and start this one instead?\n"
+                            L"(Useful when launching a newer build from another folder.)",
+                            QP_APP_DISPLAY_W, MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+            doTakeOver = (choice == IDYES);
+        }
+
+        if (!doTakeOver)
+            return 0;
+
+        std::wstring takeErr;
+        if (!single_.AcquireOrTakeOver(QP_MUTEX_NAME_W, QP_SHUTDOWN_EVENT_NAME_W, true,
+                                       /*timeoutMs=*/15000, &takeErr, QP_WND_CLASS_W))
+        {
+            if (cfg_.replaceRunning)
+            {
+                // Avoid a blocking MessageBox when driven from scripts/CI.
+                fwprintf(stderr, L"qiuckprompts: takeover failed: %s\n", takeErr.c_str());
+            } else
+            {
+                MessageBoxW(nullptr,
+                            (L"Could not take over the running instance.\n\n" + takeErr).c_str(),
+                            QP_APP_DISPLAY_W, MB_OK | MB_ICONERROR);
+            }
+            return 1;
+        }
     }
 
     // Log path default: <exe>/logs/qiuckprompts.log  (portable, easy to find while developing)
@@ -398,6 +431,13 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         QP_LOG_ERROR(L"%s", err.c_str());
         MessageBoxW(nullptr, err.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONERROR);
         return 3;
+    }
+
+    // Named shutdown event → PostMessage(WM_CLOSE) when another build takes over.
+    if (!single_.StartShutdownWatcher(hwnd_, &err))
+    {
+        QP_LOG_WARN(L"shutdown watcher not started: %s", err.c_str());
+        err.clear();
     }
 
     if (!InitTray(&err))

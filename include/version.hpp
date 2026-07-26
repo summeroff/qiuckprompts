@@ -29,4 +29,5 @@
 #define QP_APP_NAME_W L"qiuckprompts"
 #define QP_APP_DISPLAY_W L"QiuckPrompts"
 #define QP_MUTEX_NAME_W L"Local\\QiuckPrompts_SingleInstance_v1"
+#define QP_SHUTDOWN_EVENT_NAME_W L"Local\\QiuckPrompts_Shutdown_v1"
 #define QP_WND_CLASS_W L"QiuckPromptsMessageWindow"

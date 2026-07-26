@@ -278,23 +278,222 @@ std::wstring LastErrorMessage()
 
 SingleInstance::~SingleInstance()
 {
+    CloseAll();
+}
+
+void SingleInstance::CloseAll()
+{
+    StopWatcher();
+    if (ownsMutex_ && mutex_)
+    {
+        ReleaseMutex(mutex_);
+        ownsMutex_ = false;
+    }
     if (mutex_)
     {
         CloseHandle(mutex_);
         mutex_ = nullptr;
     }
+    if (shutdownEvent_)
+    {
+        CloseHandle(shutdownEvent_);
+        shutdownEvent_ = nullptr;
+    }
+    if (stopEvent_)
+    {
+        CloseHandle(stopEvent_);
+        stopEvent_ = nullptr;
+    }
 }
 
-bool SingleInstance::Acquire(const std::wstring& name)
+void SingleInstance::StopWatcher()
+{
+    if (stopEvent_)
+        SetEvent(stopEvent_);
+    if (watcherThread_)
+    {
+        const DWORD w = WaitForSingleObject(watcherThread_, 3000);
+        if (w == WAIT_TIMEOUT)
+            TerminateThread(watcherThread_, 1); // last resort; process is exiting
+        CloseHandle(watcherThread_);
+        watcherThread_ = nullptr;
+    }
+    watchHwnd_ = nullptr;
+}
+
+bool SingleInstance::IsAnotherRunning(const std::wstring& mutexName)
 {
     SetLastError(0);
-    mutex_ = CreateMutexW(nullptr, TRUE, name.c_str());
-    if (!mutex_)
+    HANDLE m = CreateMutexW(nullptr, FALSE, mutexName.c_str());
+    if (!m)
         return false;
-    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    const bool exists = (GetLastError() == ERROR_ALREADY_EXISTS);
+    // If we created it, we must not leave a phantom owner — close immediately.
+    // Creating with bInitialOwner=FALSE does not take ownership until Wait.
+    CloseHandle(m);
+    return exists;
+}
+
+bool SingleInstance::AcquireOrTakeOver(const std::wstring& mutexName,
+                                       const std::wstring& shutdownEventName, bool takeOver,
+                                       DWORD timeoutMs, std::wstring* error,
+                                       const wchar_t* peerWindowClass)
+{
+    CloseAll();
+
+    SetLastError(0);
+    mutex_ = CreateMutexW(nullptr, FALSE, mutexName.c_str());
+    if (!mutex_)
     {
+        if (error)
+            *error = L"CreateMutex failed: " + LastErrorMessage();
+        return false;
+    }
+
+    // Named manual-reset event: sticky "please quit" until the new owner resets.
+    SetLastError(0);
+    shutdownEvent_ =
+        CreateEventW(nullptr, TRUE /*manual*/, FALSE /*nonsignaled*/, shutdownEventName.c_str());
+    if (!shutdownEvent_)
+    {
+        if (error)
+            *error = L"CreateEvent(shutdown) failed: " + LastErrorMessage();
         CloseHandle(mutex_);
         mutex_ = nullptr;
+        return false;
+    }
+
+    // Try immediate ownership.
+    DWORD wr = WaitForSingleObject(mutex_, 0);
+    if (wr == WAIT_OBJECT_0 || wr == WAIT_ABANDONED)
+    {
+        ownsMutex_ = true;
+        // Clear any leftover takeover signal so we don't quit ourselves.
+        ResetEvent(shutdownEvent_);
+        return true;
+    }
+
+    if (wr != WAIT_TIMEOUT)
+    {
+        if (error)
+            *error = L"WaitForSingleObject(mutex) failed: " + Win32ErrorMessage(wr);
+        CloseAll();
+        return false;
+    }
+
+    // Another instance owns the mutex.
+    if (!takeOver)
+    {
+        CloseAll();
+        return false;
+    }
+
+    if (!SetEvent(shutdownEvent_))
+    {
+        if (error)
+            *error = L"SetEvent(shutdown) failed: " + LastErrorMessage();
+        CloseAll();
+        return false;
+    }
+
+    // Backup path: PostMessage WM_CLOSE to the peer's hidden top-level window.
+    // (Event watcher is primary; this helps if the watcher thread is stuck.)
+    if (peerWindowClass && peerWindowClass[0])
+    {
+        HWND peer = FindWindowW(peerWindowClass, nullptr);
+        if (peer)
+            PostMessageW(peer, WM_CLOSE, 0, 0);
+    }
+
+    wr = WaitForSingleObject(mutex_, timeoutMs);
+    if (wr != WAIT_OBJECT_0 && wr != WAIT_ABANDONED)
+    {
+        if (error)
+        {
+            if (wr == WAIT_TIMEOUT)
+                *error = L"Timed out waiting for the other QiuckPrompts instance to exit.";
+            else
+                *error = L"WaitForSingleObject(mutex takeover) failed: " + Win32ErrorMessage(wr);
+        }
+        CloseAll();
+        return false;
+    }
+
+    ownsMutex_ = true;
+    ResetEvent(shutdownEvent_);
+    return true;
+}
+
+DWORD WINAPI SingleInstance::WatcherThreadMain(void* param)
+{
+    auto* self = static_cast<SingleInstance*>(param);
+    if (!self || !self->shutdownEvent_ || !self->stopEvent_)
+        return 0;
+
+    HANDLE waits[2] = {self->stopEvent_, self->shutdownEvent_};
+    for (;;)
+    {
+        const DWORD w = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
+        if (w == WAIT_OBJECT_0)
+        {
+            // stopEvent — exit thread
+            break;
+        }
+        if (w == WAIT_OBJECT_0 + 1)
+        {
+            const HWND hwnd = self->watchHwnd_;
+            if (hwnd && IsWindow(hwnd))
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+            // Manual-reset stays signaled; avoid a tight PostMessage loop.
+            // Sleep until stop or a short poll — process should be exiting.
+            for (;;)
+            {
+                const DWORD s = WaitForSingleObject(self->stopEvent_, 50);
+                if (s == WAIT_OBJECT_0)
+                    return 0;
+                if (!self->watchHwnd_ || !IsWindow(self->watchHwnd_))
+                    return 0;
+            }
+        }
+        break;
+    }
+    return 0;
+}
+
+bool SingleInstance::StartShutdownWatcher(HWND hwnd, std::wstring* error)
+{
+    if (!hwnd)
+    {
+        if (error)
+            *error = L"StartShutdownWatcher: null hwnd";
+        return false;
+    }
+    if (!shutdownEvent_)
+    {
+        if (error)
+            *error = L"StartShutdownWatcher: no shutdown event (Acquire first)";
+        return false;
+    }
+
+    StopWatcher();
+    watchHwnd_ = hwnd;
+
+    stopEvent_ = CreateEventW(nullptr, TRUE /*manual*/, FALSE, nullptr);
+    if (!stopEvent_)
+    {
+        if (error)
+            *error = L"CreateEvent(stop) failed: " + LastErrorMessage();
+        return false;
+    }
+
+    watcherThread_ = CreateThread(nullptr, 0, &SingleInstance::WatcherThreadMain, this, 0, nullptr);
+    if (!watcherThread_)
+    {
+        if (error)
+            *error = L"CreateThread(shutdown watcher) failed: " + LastErrorMessage();
+        CloseHandle(stopEvent_);
+        stopEvent_ = nullptr;
+        watchHwnd_ = nullptr;
         return false;
     }
     return true;
