@@ -134,22 +134,25 @@ build\Debug\qiuckprompts.exe --self-test
 This project ships installable binaries via
 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
-CI builds on every push/PR. **Pushing a version tag** builds a release binary and
-publishes a Release with a Windows x64 zip attached:
+CI builds on every push/PR as **`0.0.0-dev`**. **Pushing a version tag** injects that
+version into the binary (CMake `-DQP_RELEASE_VERSION=`), builds RelWithDebInfo, and
+publishes a Release with a Windows x64 zip:
 
 ```bat
 git checkout master
 git pull
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.2
+git push origin v0.3.2
 ```
 
 | Item | Detail |
 |------|--------|
 | Trigger | Git tag matching `v*` |
+| Version | Tag without `v` → PE + About + FileVersion strings |
+| Local/PR | Always `0.0.0-dev` (not a release) |
 | Build | `RelWithDebInfo` (MSVC x64) |
 | Asset | `qiuckprompts-<tag>-win-x64.zip` |
-| Contents | `qiuckprompts.exe`, PDB, README, LICENSE |
+| Contents | `qiuckprompts.exe`, PDB, README, LICENSE, config |
 | Notes | Auto-generated from commits since previous tag |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for branch/PR workflow and release checklist.

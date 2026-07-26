@@ -1,14 +1,5 @@
 #include "resource.h"
-
-#ifndef QP_VERSION_MAJOR
-#define QP_VERSION_MAJOR 0
-#endif
-#ifndef QP_VERSION_MINOR
-#define QP_VERSION_MINOR 2
-#endif
-#ifndef QP_VERSION_PATCH
-#define QP_VERSION_PATCH 0
-#endif
+#include "version_build.h"
 
 IDI_APPICON ICON "app.ico"
 
@@ -27,11 +18,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "qiuckprompts"
             VALUE "FileDescription",  "QiuckPrompts tray hotkey AI workflow"
-            VALUE "FileVersion",      "0.2.0"
+            VALUE "FileVersion",      QP_VERSION_STRING
             VALUE "InternalName",     "qiuckprompts"
             VALUE "OriginalFilename", "qiuckprompts.exe"
             VALUE "ProductName",      "QiuckPrompts"
-            VALUE "ProductVersion",   "0.2.0"
+            VALUE "ProductVersion",   QP_VERSION_STRING
         END
     END
     BLOCK "VarFileInfo"
