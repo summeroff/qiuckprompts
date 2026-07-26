@@ -605,6 +605,13 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
             cfg.hotkeyReleasePollMs = ClampInt(_wtoi(v.c_str()), 5, 100);
             continue;
         }
+
+        if (arg.size() >= 2 && arg[0] == L'-')
+        {
+            if (error)
+                *error = L"Unknown option: " + arg;
+            return false;
+        }
     }
     return true;
 }

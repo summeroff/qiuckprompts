@@ -3,6 +3,9 @@
 # Jobs:
 #   format — clang-format dry-run against .clang-format (Allman braces, } else { ok)
 #   build  — VS 2022 Debug + --self-test; release zip on tags v*
+#
+# Version: local/PR/untagged CI → CMake default 0.0.0-dev.
+#          tag vX.Y.Z → -DQP_RELEASE_VERSION=X.Y.Z (no leading v).
 
 name: CI
 
@@ -46,8 +49,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve release version
+        id: ver
+        shell: pwsh
+        run: |
+          $ref = $env:GITHUB_REF
+          if ($ref -match '^refs/tags/v(.+)$') {
+            $v = $Matches[1]
+            Write-Host "Tagged release version: $v"
+            "version=$v" >> $env:GITHUB_OUTPUT
+            "is_release=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "Non-tag build — CMake default 0.0.0-dev"
+            "version=" >> $env:GITHUB_OUTPUT
+            "is_release=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Configure (VS 2022 x64)
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        shell: pwsh
+        run: |
+          $args = @('-S', '.', '-B', 'build', '-G', 'Visual Studio 17 2022', '-A', 'x64')
+          if ('${{ steps.ver.outputs.is_release }}' -eq 'true') {
+            $args += "-DQP_RELEASE_VERSION=${{ steps.ver.outputs.version }}"
+          }
+          Write-Host "cmake $($args -join ' ')"
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Debug
         run: cmake --build build --config Debug --parallel

@@ -23,32 +23,37 @@ CI (`.github/workflows/ci.yml`) already:
 
 | Event | What happens |
 |-------|----------------|
-| Push / PR to `master` | Debug build + `--self-test` + artifact upload |
-| Push tag `v*` (e.g. `v0.2.0`) | RelWithDebInfo build, zip, **create GitHub Release** with the zip attached |
+| Push / PR to `master` | Debug build + `--self-test` + artifact upload (**version `0.0.0-dev`**) |
+| Push tag `v*` (e.g. `v0.3.2`) | Same, with `-DQP_RELEASE_VERSION=0.3.2`; RelWithDebInfo zip + GitHub Release |
 
 ### Cut a release
 
-After the changes you want are on `master`:
+After the changes you want are on `master` — **do not edit CMake for the version**:
 
 ```bat
 git checkout master
 git pull origin master
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.2
+git push origin v0.3.2
 ```
 
 Then check:
 
 - Actions: build + package must be green  
-- https://github.com/summeroff/qiuckprompts/releases — new release `v0.2.0`  
-- Asset: `qiuckprompts-v0.2.0-win-x64.zip` (`qiuckprompts.exe`, PDB, README, LICENSE)
+- https://github.com/summeroff/qiuckprompts/releases — new release `v0.3.2`  
+- Asset: `qiuckprompts-v0.3.2-win-x64.zip` (`qiuckprompts.exe`, PDB, README, LICENSE, config)
 
-Tag names must match `v*` (semver recommended: `v0.2.0`, `v1.0.0`).
+Tag names must match `v*` (semver recommended: `v0.3.2`, `v1.0.0`).
 
-Optional: create the release notes on GitHub UI after CI generates them, or edit the release body.
+Optional: edit the auto-generated release notes on GitHub after CI finishes.
 
 ### Version numbers
 
-- CMake `project(... VERSION ...)` in `CMakeLists.txt`  
-- Tag name used for the zip and Release title  
-- Keep them aligned when you ship (e.g. tag `v0.2.0` when project version is `0.2.0`)
+| Source | Role |
+|--------|------|
+| Git tag `vX.Y.Z` | **Only** release version knob |
+| CMake `-DQP_RELEASE_VERSION=` | CI sets from the tag (no leading `v`) |
+| Default `0.0.0-dev` | Local builds, PRs, untagged CI — never looks like a release |
+| `cmake/version_build.h.in` → generated header | Feeds C++ (`QP_VERSION_STRING`) and `resources/app.rc` (PE + string File/Product version) |
+
+Do **not** bump a version in `CMakeLists.txt` for shipping. Local Debug will show `0.0.0-dev` in the tray/About and in file Properties.

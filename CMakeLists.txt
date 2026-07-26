@@ -1,9 +1,42 @@
 cmake_minimum_required(VERSION 3.20)
-project(qiuckprompts VERSION 0.3.1 LANGUAGES CXX RC)
+
+# Single version knob. Local/PR builds stay on the default so a Debug exe is never
+# mistaken for a GitHub Release. CI tag builds pass e.g. -DQP_RELEASE_VERSION=0.3.2
+# (tag v0.3.2 without the leading v).
+set(QP_RELEASE_VERSION "0.0.0-dev" CACHE STRING
+    "App version string (CI sets from git tag; local default is 0.0.0-dev)")
+
+# Numeric PE/FILEVERSION fields: take leading X.Y.Z; ignore -dev / +meta suffix.
+set(_qp_ver "${QP_RELEASE_VERSION}")
+string(REGEX REPLACE "^[vV]" "" _qp_ver "${_qp_ver}")
+if(_qp_ver MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+    set(QP_VERSION_MAJOR "${CMAKE_MATCH_1}")
+    set(QP_VERSION_MINOR "${CMAKE_MATCH_2}")
+    set(QP_VERSION_PATCH "${CMAKE_MATCH_3}")
+else()
+    set(QP_VERSION_MAJOR 0)
+    set(QP_VERSION_MINOR 0)
+    set(QP_VERSION_PATCH 0)
+endif()
+set(QP_VERSION_STRING "${QP_RELEASE_VERSION}")
+
+project(qiuckprompts
+    VERSION ${QP_VERSION_MAJOR}.${QP_VERSION_MINOR}.${QP_VERSION_PATCH}
+    LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+set(QP_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${QP_GENERATED_DIR}")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version_build.h.in"
+    "${QP_GENERATED_DIR}/version_build.h"
+    @ONLY
+)
+message(STATUS "qiuckprompts version: ${QP_VERSION_STRING} "
+    "(PE ${QP_VERSION_MAJOR}.${QP_VERSION_MINOR}.${QP_VERSION_PATCH})")
 
 add_compile_definitions(
     UNICODE
@@ -12,10 +45,6 @@ add_compile_definitions(
     NOMINMAX
     WINVER=0x0A00
     _WIN32_WINNT=0x0A00
-    QP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
-    QP_VERSION_MINOR=${PROJECT_VERSION_MINOR}
-    QP_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-    QP_VERSION_STRING="${PROJECT_VERSION}"
 )
 
 if(MSVC)
@@ -67,6 +96,7 @@ add_executable(qiuckprompts WIN32 ${QP_SOURCES} ${QP_HEADERS})
 target_include_directories(qiuckprompts PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/resources
+    ${QP_GENERATED_DIR}
 )
 
 target_link_libraries(qiuckprompts PRIVATE
@@ -78,10 +108,6 @@ target_link_libraries(qiuckprompts PRIVATE
     oleaut32
     psapi
     uiautomationcore
-)
-
-set_source_files_properties(resources/app.rc PROPERTIES
-    COMPILE_DEFINITIONS "QP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR};QP_VERSION_MINOR=${PROJECT_VERSION_MINOR};QP_VERSION_PATCH=${PROJECT_VERSION_PATCH}"
 )
 
 # Portable layout next to the exe
