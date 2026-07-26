@@ -38,21 +38,24 @@ if not defined CF (
 set COUNT=0
 set FAIL=0
 
-rem dir /s is reliable; nested for /R with variable roots is not.
+rem Enumerate with dir /s /b. Empty globs print "File Not Found" to *stdout*
+rem (not only stderr), so always require the path to exist as a file.
 for %%E in (cpp hpp) do (
   for %%R in (src include) do (
     if exist "%%R\." (
       for /f "delims=" %%F in ('dir /s /b "%%R\*.%%E" 2^>nul') do (
-        set /a COUNT+=1
-        if !CHECK! EQU 1 (
-          "%CF%" --dry-run --Werror --style=file "%%F"
-          if errorlevel 1 (
-            echo NEED FORMAT: %%F
-            set FAIL=1
+        if exist "%%~fF" if not exist "%%~fF\" (
+          set /a COUNT+=1
+          if !CHECK! EQU 1 (
+            "%CF%" --dry-run --Werror --style=file "%%~fF"
+            if errorlevel 1 (
+              echo NEED FORMAT: %%~fF
+              set FAIL=1
+            )
+          ) else (
+            "%CF%" -i --style=file "%%~fF"
+            if errorlevel 1 set FAIL=1
           )
-        ) else (
-          "%CF%" -i --style=file "%%F"
-          if errorlevel 1 set FAIL=1
         )
       )
     )
