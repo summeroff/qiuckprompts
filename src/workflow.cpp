@@ -213,13 +213,12 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error) {
     WaitModifiersReleased(200);
 
     // --- Paste into AI form ---
-    // IMPORTANT: Meta AI (and many SPAs) handle paste asynchronously and may
-    // re-read the clipboard after Ctrl+V returns. If we restore the user's old
-    // clipboard too soon, the form ends up with that old text and NO prompt.
-    // Prefer Unicode key injection for the text payload so the clipboard is
-    // not involved in the final paste at all.
-    if (req.requireClipboardImage && !savedImage.empty()) {
-        QP_LOG_INFO(L"workflow: paste image first");
+        // Clipboard+Ctrl+V keeps newlines/formatting (human-readable).
+        // Meta may re-read the clipboard after Ctrl+V — so we KEEP the payload on
+        // the clipboard for clipboardRestoreDelayMs before restoring the user clip.
+        // Unicode path is fallback; it maps \n → VK_RETURN so lines still break.
+        if (req.requireClipboardImage && !savedImage.empty()) {
+            QP_LOG_INFO(L"workflow: paste image first");
         std::wstring ierr;
         if (!ClipboardRestoreImage(savedImage, &ierr)) {
             restoreClip();
