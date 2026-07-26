@@ -135,9 +135,13 @@ bool SendEnter(std::wstring* error) {
 
 bool SendUnicodeText(const std::wstring& text, std::wstring* error) {
     if (text.empty()) return true;
+
+    // Web inputs ignore KEYEVENTF_UNICODE for \n/\r — they need real Enter.
+    // Build a mixed sequence: unicode chars + VK_RETURN for line breaks.
     std::vector<INPUT> inputs;
-    inputs.reserve(text.size() * 2);
-    for (wchar_t ch : text) {
+    inputs.reserve(text.size() * 2 + 8);
+
+    auto pushUnicode = [&](wchar_t ch) {
         INPUT down{};
         down.type = INPUT_KEYBOARD;
         down.ki.wVk = 0;
@@ -147,15 +151,47 @@ bool SendUnicodeText(const std::wstring& text, std::wstring* error) {
         up.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
         inputs.push_back(down);
         inputs.push_back(up);
+    };
+    auto pushVk = [&](WORD vk) {
+        inputs.push_back(MakeVk(vk, false));
+        inputs.push_back(MakeVk(vk, true));
+    };
+
+    size_t newlines = 0;
+    for (size_t i = 0; i < text.size(); ++i) {
+        const wchar_t ch = text[i];
+        if (ch == L'\r') {
+            // treat \r\n as one Enter
+            if (i + 1 < text.size() && text[i + 1] == L'\n') ++i;
+            pushVk(VK_RETURN);
+            ++newlines;
+            continue;
+        }
+        if (ch == L'\n') {
+            pushVk(VK_RETURN);
+            ++newlines;
+            continue;
+        }
+        // Skip other C0 controls except tab
+        if (ch == L'\t') {
+            pushVk(VK_TAB);
+            continue;
+        }
+        if (ch < 0x20) continue;
+        pushUnicode(ch);
     }
-    QP_LOG_DEBUG(L"input: unicode %zu wchar", text.size());
-    // chunk
+
+    QP_LOG_DEBUG(L"input: unicode %zu wchar (%zu newlines as Enter, %zu events)",
+                 text.size(), newlines, inputs.size());
+
     constexpr size_t kChunk = 64;
     for (size_t off = 0; off < inputs.size(); off += kChunk) {
         const size_t n = (inputs.size() - off > kChunk) ? kChunk : (inputs.size() - off);
         std::vector<INPUT> slice(inputs.begin() + static_cast<std::ptrdiff_t>(off),
                                  inputs.begin() + static_cast<std::ptrdiff_t>(off + n));
         if (!SendInputs(slice, error)) return false;
+        // Tiny breather so Chrome can process Enter between chunks of a long paste.
+        if (n >= kChunk) Sleep(1);
     }
     return true;
 }

@@ -78,9 +78,11 @@ struct WorkflowConfig {
     // Restoring too soon pastes the OLD clipboard (no prompt) into the form.
     int clipboardRestoreDelayMs = 2500;
 
-    // true  = KEYEVENTF_UNICODE typing (no clipboard; avoids Meta late-read race)
-    // false = clipboard + Ctrl+V (faster; keep restore delay high)
-    bool pasteTextViaUnicode = true;
+    // Prefer clipboard+Ctrl+V for multi-line text (preserves newlines/formatting).
+    // Hold payload on clipboard after paste so Meta's late clipboard read still
+    // gets the full prompt — never restore the old clip too soon.
+    // Set true only if clipboard paste is blocked; unicode maps \n → Enter.
+    bool pasteTextViaUnicode = false;
 };
 
 struct AppConfig {
