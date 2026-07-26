@@ -17,8 +17,9 @@ struct BrowserTarget
 };
 
 // Find best visible top-level browser window.
-// Prefers Chrome Dev / Beta (install path), then any Chrome, then Edge.
-// titleHint e.g. L"Chrome Dev" (case-insensitive substring), may be empty.
+// Prefers Chrome Dev / Beta (install path), then any Chrome, then Edge,
+// then Brave, then Firefox. titleHint e.g. L"Chrome Dev" (case-insensitive
+// substring on title/path), may be empty.
 bool FindBrowserWindow(const std::wstring& titleHint, BrowserTarget& out,
                        std::wstring* error = nullptr);
 
