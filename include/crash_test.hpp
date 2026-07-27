@@ -1,8 +1,9 @@
 #pragma once
 
 // Dev-only CLI / diagnostics (e.g. --crash-test).
-// Defined only for Debug (and configs where CMake enables QP_ENABLE_DEV_TOOLS).
-// Production RelWithDebInfo/Release tag builds leave this undefined → code stripped.
+// CMake sets QP_ENABLE_DEV_TOOLS=1 for Debug (and optionally RelWithDebInfo/Release
+// when QP_DEV_TOOLS_IN_RELWITHDEBINFO=ON). QP_DEV_TOOLS is always 0 or 1 so
+// `#if QP_DEV_TOOLS` strips the real implementations when tools are off.
 
 #if defined(QP_ENABLE_DEV_TOOLS) && QP_ENABLE_DEV_TOOLS
 #define QP_DEV_TOOLS 1

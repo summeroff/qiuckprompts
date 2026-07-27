@@ -90,9 +90,10 @@ add_compile_definitions(
 
 # Dev-only CLI (--crash-test, …): ON for Debug by default so local/CI test builds
 # keep tools; OFF for RelWithDebInfo/Release so production tag zips strip them.
-# Override: -DQP_DEV_TOOLS_IN_RELWITHDEBINFO=ON to keep tools in a local Rel build.
+# Override: -DQP_DEV_TOOLS_IN_RELWITHDEBINFO=ON to keep tools in a local Rel build
+# (applies to both RelWithDebInfo and Release configs).
 option(QP_DEV_TOOLS_IN_RELWITHDEBINFO
-       "Compile --crash-test and other dev tools into RelWithDebInfo" OFF)
+       "Compile --crash-test and other dev tools into RelWithDebInfo and Release" OFF)
 
 if(MSVC)
     add_compile_options(/W4 /permissive- /Zc:__cplusplus /utf-8)
