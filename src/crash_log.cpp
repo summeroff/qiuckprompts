@@ -319,7 +319,7 @@ void InstallCrashHandlers()
     SetUnhandledExceptionFilter(UnhandledFilter);
     _set_purecall_handler(OnPureCall);
     _set_invalid_parameter_handler(OnInvalidParameter);
-    set_terminate(OnTerminate);
+    std::set_terminate(OnTerminate);
 }
 
 } // namespace qp

@@ -1,5 +1,6 @@
 #include "app.hpp"
 #include "crash_log.hpp"
+#include "crash_test.hpp"
 #include "version.hpp"
 
 #include <windows.h>
@@ -56,7 +57,9 @@ void PrintHelp()
         L"  --hotkey-on-release       Fire after chord released (default)\n"
         L"  --hotkey-release-timeout=MS  Max wait for release (default 3000)\n"
         L"  --self-test               Headless checks\n"
-        L"  --crash-test              Intentional crash (writes stack to log)\n"
+#if QP_DEV_TOOLS
+        L"  --crash-test              Dev: run app, crash on worker thread after ~2s\n"
+#endif
         L"  --help                    This help\n"
         L"\n"
         L"Hotkeys arm on press and run on release so Ctrl/Alt are up before\n"
@@ -118,29 +121,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         return code;
     }
 
+#if !QP_DEV_TOOLS
+    // Production builds: reject the flag explicitly so scripts fail closed.
     if (HasFlag(argc, argv, L"--crash-test"))
     {
-        // Dev smoke: install handlers, point log at default path, fault.
-        wchar_t exe[MAX_PATH]{};
-        GetModuleFileNameW(nullptr, exe, MAX_PATH);
-        std::wstring log = exe;
-        const size_t slash = log.find_last_of(L"\\/");
-        if (slash != std::wstring::npos)
-            log.resize(slash);
-        log += L"\\logs\\qiuckprompts.log";
-        qp::SetCrashLogPath(log);
         if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole())
         {
             FILE* f = nullptr;
-            freopen_s(&f, "CONOUT$", "w", stdout);
-            fwprintf(stdout, L"crash-test: writing stack to %s\n", log.c_str());
+            freopen_s(&f, "CONOUT$", "w", stderr);
+            fwprintf(stderr, L"qiuckprompts: --crash-test not available in this build\n");
         }
-        // Intentional fault — filter should append stack then continue to WER.
-        RaiseException(EXCEPTION_ACCESS_VIOLATION, EXCEPTION_NONCONTINUABLE, 0, nullptr);
         if (argv)
             LocalFree(argv);
-        return 99;
+        return 2;
     }
+#endif
 
     qp::App app;
     code = app.Run(instance, argc, argv ? argv : nullptr);

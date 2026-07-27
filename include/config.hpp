@@ -2,6 +2,7 @@
 
 #include "logger.hpp"
 #include "util.hpp"
+#include "crash_test.hpp"
 
 #include <string>
 #include <vector>
@@ -109,6 +110,9 @@ struct AppConfig
     WorkflowConfig workflow;
     bool forceInsertOnly = false;
     bool replaceRunning = false; // --replace-running: skip Yes/No, take over other instance
+#if QP_DEV_TOOLS
+    bool crashTest = false; // --crash-test: run normally, crash on a worker thread after delay
+#endif
 
     HotkeyTriggerMode hotkeyTrigger = HotkeyTriggerMode::OnRelease;
     int hotkeyReleaseTimeoutMs = 3000;

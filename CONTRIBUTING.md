@@ -63,5 +63,9 @@ Do **not** bump a version in `CMakeLists.txt` for shipping. Local Debug shows th
 
 ### Crashes
 
-Unhandled SEH / purecall / invalid parameter / `std::terminate` append a stack walk to the log file (`logs/qiuckprompts.log`) via dbghelp when PDBs are present. No Sentry yet — grep `CRASH` in the log. Dev smoke: `qiuckprompts.exe --crash-test`.
+Unhandled SEH / purecall / invalid parameter / `std::terminate` append a stack walk to the log file (`logs/qiuckprompts.log`) via dbghelp when PDBs are present. No Sentry yet — grep `CRASH` in the log.
+
+**Dev-only tools** (`--crash-test`, …) are compiled **only into Debug** (CMake `QP_ENABLE_DEV_TOOLS`). Production **RelWithDebInfo** tag zips strip them. Override locally with `-DQP_DEV_TOOLS_IN_RELWITHDEBINFO=ON` if you need the flag on a Rel build.
+
+`--crash-test` starts the app normally (tray/hotkeys), then a **worker thread** crashes after ~2s through a deep call ladder (`CrashLadder::Rung0…Rung7`) so the log stack is multi-frame.
 

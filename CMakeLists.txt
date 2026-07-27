@@ -48,9 +48,14 @@ if(GIT_FOUND)
     endif()
 endif()
 
-# Display / log string: always attach +gHASH for traceability; dirty when tree dirty.
+# Display / log string: always append +gHASH (from git at configure time).
+# Pass bare versions only: 0.0.0-dev or X.Y.Z — do not include +g… in QP_RELEASE_VERSION.
 # Examples: 0.0.0-dev+g1a2b3c4d5e6f  |  0.3.2+g1a2b3c4d5e6f  |  0.0.0-dev+g1a2b3c4d5e6f.dirty
-set(QP_VERSION_STRING "${QP_RELEASE_VERSION}+g${QP_GIT_HASH}")
+set(_qp_base "${QP_RELEASE_VERSION}")
+# Strip a mistaken pre-baked +g… / .dirty so we never double-append.
+string(REGEX REPLACE "\\+g[0-9a-fA-F]+(\\.dirty)?$" "" _qp_base "${_qp_base}")
+string(REGEX REPLACE "\\.dirty$" "" _qp_base "${_qp_base}")
+set(QP_VERSION_STRING "${_qp_base}+g${QP_GIT_HASH}")
 if(QP_GIT_DIRTY)
     set(QP_VERSION_STRING "${QP_VERSION_STRING}.dirty")
 endif()
@@ -83,6 +88,12 @@ add_compile_definitions(
     _WIN32_WINNT=0x0A00
 )
 
+# Dev-only CLI (--crash-test, …): ON for Debug by default so local/CI test builds
+# keep tools; OFF for RelWithDebInfo/Release so production tag zips strip them.
+# Override: -DQP_DEV_TOOLS_IN_RELWITHDEBINFO=ON to keep tools in a local Rel build.
+option(QP_DEV_TOOLS_IN_RELWITHDEBINFO
+       "Compile --crash-test and other dev tools into RelWithDebInfo" OFF)
+
 if(MSVC)
     add_compile_options(/W4 /permissive- /Zc:__cplusplus /utf-8)
     add_compile_options("$<$<CONFIG:Debug>:/Od;/Zi>")
@@ -109,6 +120,7 @@ set(QP_SOURCES
     src/tray.cpp
     src/util.cpp
     src/crash_log.cpp
+    src/crash_test.cpp
     resources/app.rc
 )
 
@@ -128,6 +140,7 @@ set(QP_HEADERS
     include/util.hpp
     include/version.hpp
     include/crash_log.hpp
+    include/crash_test.hpp
     resources/resource.h
 )
 
@@ -138,6 +151,15 @@ target_include_directories(qiuckprompts PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/resources
     ${QP_GENERATED_DIR}
 )
+
+# Per-config: Debug always gets dev tools; RelWithDebInfo only if option ON.
+target_compile_definitions(qiuckprompts PRIVATE
+    $<$<CONFIG:Debug>:QP_ENABLE_DEV_TOOLS=1>
+    $<$<AND:$<CONFIG:RelWithDebInfo>,$<BOOL:${QP_DEV_TOOLS_IN_RELWITHDEBINFO}>>:QP_ENABLE_DEV_TOOLS=1>
+    $<$<AND:$<CONFIG:Release>,$<BOOL:${QP_DEV_TOOLS_IN_RELWITHDEBINFO}>>:QP_ENABLE_DEV_TOOLS=1>
+)
+message(STATUS "dev tools: Debug=ON; RelWithDebInfo/Release="
+    "${QP_DEV_TOOLS_IN_RELWITHDEBINFO} (QP_DEV_TOOLS_IN_RELWITHDEBINFO)")
 
 target_link_libraries(qiuckprompts PRIVATE
     user32
