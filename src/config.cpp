@@ -532,6 +532,11 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
             cfg.forceInsertOnly = true;
             continue;
         }
+        if (arg == L"--replace-running")
+        {
+            cfg.replaceRunning = true;
+            continue;
+        }
         if (arg == L"--no-uia")
         {
             cfg.workflow.pageReadyUseUia = false;

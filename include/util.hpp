@@ -42,7 +42,16 @@ std::wstring FormatHotkeyDisplay(UINT modifiers, UINT vk);
 std::wstring Win32ErrorMessage(DWORD code);
 std::wstring LastErrorMessage();
 
-// RAII single-instance mutex
+// Single-instance gate for one interactive user session (Local\ namespace).
+//
+//   Named mutex  — exclusive ownership (only one live app).
+//   Named event  — "please exit" signal for takeover (manual-reset).
+//                  Prefer event over semaphore: one sticky signal until the
+//                  new owner resets it; works even if the old instance has not
+//                  started its watcher yet.
+//
+// Second launch: caller shows UI, then AcquireOrTakeOver(..., takeOver=true)
+// sets the event and waits for the mutex (old process WM_CLOSE → exit).
 class SingleInstance
 {
 public:
@@ -51,10 +60,31 @@ public:
     SingleInstance(const SingleInstance&) = delete;
     SingleInstance& operator=(const SingleInstance&) = delete;
 
-    bool Acquire(const std::wstring& name);
+    // Try to own the mutex. If another instance holds it:
+    //   takeOver=false → return false immediately (caller shows Yes/No UI).
+    //   takeOver=true  → SetEvent(shutdown) + optional FindWindow/WM_CLOSE, then wait.
+    // peerWindowClass: top-level window class of the running app (backup signal path).
+    bool AcquireOrTakeOver(const std::wstring& mutexName, const std::wstring& shutdownEventName,
+                           bool takeOver, DWORD timeoutMs, std::wstring* error = nullptr,
+                           const wchar_t* peerWindowClass = nullptr);
+
+    // True if another instance currently owns the mutex (does not take ownership).
+    static bool IsAnotherRunning(const std::wstring& mutexName);
+
+    // After the message HWND exists: watch shutdown event → PostMessage WM_CLOSE.
+    bool StartShutdownWatcher(HWND hwnd, std::wstring* error = nullptr);
 
 private:
+    static DWORD WINAPI WatcherThreadMain(void* param);
+    void StopWatcher();
+    void CloseAll();
+
     HANDLE mutex_ = nullptr;
+    HANDLE shutdownEvent_ = nullptr; // named, manual-reset
+    HANDLE stopEvent_ = nullptr;     // local manual-reset — stop watcher thread
+    HANDLE watcherThread_ = nullptr;
+    HWND watchHwnd_ = nullptr;
+    bool ownsMutex_ = false;
 };
 
 } // namespace qp

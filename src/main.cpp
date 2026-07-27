@@ -50,6 +50,7 @@ void PrintHelp()
         L"  --page-ready-min=MS       Min wait after navigate (default 500)\n"
         L"  --no-uia                  Disable UI Automation; title-only wait\n"
         L"  --insert-only             Paste template only (no browser flow)\n"
+        L"  --replace-running         If already running, close it and start this build\n"
         L"  --hotkey-on-press         Fire on key-down (default: on key-up/release)\n"
         L"  --hotkey-on-release       Fire after chord released (default)\n"
         L"  --hotkey-release-timeout=MS  Max wait for release (default 3000)\n"
