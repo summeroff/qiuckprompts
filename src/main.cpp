@@ -86,7 +86,7 @@ void PrintHelp()
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 {
-    // Before anything else: SEH / purecall / terminate → stack into log file.
+    // Before anything else: SEH / purecall / invalid-parameter / terminate → stack into log.
     qp::InstallCrashHandlers();
 
     int argc = 0;
