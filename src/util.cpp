@@ -313,7 +313,9 @@ void SingleInstance::StopWatcher()
     if (watcherThread_)
     {
         const DWORD w = WaitForSingleObject(watcherThread_, 3000);
-        if (w == WAIT_TIMEOUT)
+        // TIMEOUT: still running. FAILED: wait broken — thread may still be alive.
+        // Either way, do not CloseHandle(stopEvent_) while the thread might wait on it.
+        if (w == WAIT_TIMEOUT || w == WAIT_FAILED)
             TerminateThread(watcherThread_, 1); // last resort; process is exiting
         CloseHandle(watcherThread_);
         watcherThread_ = nullptr;
@@ -437,6 +439,9 @@ bool SingleInstance::AcquireOrTakeOver(const std::wstring& mutexName,
                          std::to_wstring(wr) + L"): " + Win32ErrorMessage(gle);
             }
         }
+        // Takeover failed: clear the sticky named event so a still-running peer is
+        // not left with a permanent "please exit" signal after we give up.
+        ResetEvent(shutdownEvent_);
         CloseAll();
         return false;
     }
