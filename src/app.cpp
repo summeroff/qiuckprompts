@@ -6,6 +6,7 @@
 #include "version.hpp"
 #include "workflow.hpp"
 #include "clipboard_image.hpp"
+#include "crash_log.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -392,6 +393,7 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
     }
 
     Logger::Instance().Init(logPath_, cfg_.logLevel, cfg_.console);
+    SetCrashLogPath(logPath_);
 
     // Dedicated title collection file (stable TITLE_SAMPLE lines for grepping).
     {
@@ -401,6 +403,7 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
 
     QP_LOG_INFO(L"=== %s v%s starting ===", QP_APP_DISPLAY_W,
                 Utf8ToWide(QP_VERSION_STRING).c_str());
+    QP_LOG_INFO(L"git=%s dirty=%d", Utf8ToWide(QP_GIT_HASH).c_str(), QP_GIT_DIRTY ? 1 : 0);
     QP_LOG_INFO(L"exe=%s", GetExePath().c_str());
     QP_LOG_INFO(L"log=%s level=%s pasteDelayMs=%d insertOnly=%d", logPath_.c_str(),
                 Logger::LevelName(cfg_.logLevel), cfg_.pasteDelayMs, cfg_.forceInsertOnly ? 1 : 0);

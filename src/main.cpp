@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "crash_log.hpp"
 #include "version.hpp"
 
 #include <windows.h>
@@ -55,6 +56,7 @@ void PrintHelp()
         L"  --hotkey-on-release       Fire after chord released (default)\n"
         L"  --hotkey-release-timeout=MS  Max wait for release (default 3000)\n"
         L"  --self-test               Headless checks\n"
+        L"  --crash-test              Intentional crash (writes stack to log)\n"
         L"  --help                    This help\n"
         L"\n"
         L"Hotkeys arm on press and run on release so Ctrl/Alt are up before\n"
@@ -81,6 +83,9 @@ void PrintHelp()
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 {
+    // Before anything else: SEH / purecall / terminate → stack into log file.
+    qp::InstallCrashHandlers();
+
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!argv)
@@ -111,6 +116,30 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         if (argv)
             LocalFree(argv);
         return code;
+    }
+
+    if (HasFlag(argc, argv, L"--crash-test"))
+    {
+        // Dev smoke: install handlers, point log at default path, fault.
+        wchar_t exe[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        std::wstring log = exe;
+        const size_t slash = log.find_last_of(L"\\/");
+        if (slash != std::wstring::npos)
+            log.resize(slash);
+        log += L"\\logs\\qiuckprompts.log";
+        qp::SetCrashLogPath(log);
+        if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole())
+        {
+            FILE* f = nullptr;
+            freopen_s(&f, "CONOUT$", "w", stdout);
+            fwprintf(stdout, L"crash-test: writing stack to %s\n", log.c_str());
+        }
+        // Intentional fault — filter should append stack then continue to WER.
+        RaiseException(EXCEPTION_ACCESS_VIOLATION, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+        if (argv)
+            LocalFree(argv);
+        return 99;
     }
 
     qp::App app;

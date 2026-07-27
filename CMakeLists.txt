@@ -18,7 +18,42 @@ else()
     set(QP_VERSION_MINOR 0)
     set(QP_VERSION_PATCH 0)
 endif()
-set(QP_VERSION_STRING "${QP_RELEASE_VERSION}")
+
+# Short git identity for logs (especially 0.0.0-dev builds).
+set(QP_GIT_HASH "unknown")
+set(QP_GIT_DIRTY 0)
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _qp_git_hash
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _qp_git_hash_rc
+    )
+    if(_qp_git_hash_rc EQUAL 0 AND NOT _qp_git_hash STREQUAL "")
+        set(QP_GIT_HASH "${_qp_git_hash}")
+    endif()
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" status --porcelain
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _qp_git_status
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _qp_git_status_rc
+    )
+    if(_qp_git_status_rc EQUAL 0 AND NOT _qp_git_status STREQUAL "")
+        set(QP_GIT_DIRTY 1)
+    endif()
+endif()
+
+# Display / log string: always attach +gHASH for traceability; dirty when tree dirty.
+# Examples: 0.0.0-dev+g1a2b3c4d5e6f  |  0.3.2+g1a2b3c4d5e6f  |  0.0.0-dev+g1a2b3c4d5e6f.dirty
+set(QP_VERSION_STRING "${QP_RELEASE_VERSION}+g${QP_GIT_HASH}")
+if(QP_GIT_DIRTY)
+    set(QP_VERSION_STRING "${QP_VERSION_STRING}.dirty")
+endif()
 
 project(qiuckprompts
     VERSION ${QP_VERSION_MAJOR}.${QP_VERSION_MINOR}.${QP_VERSION_PATCH}
@@ -36,7 +71,8 @@ configure_file(
     @ONLY
 )
 message(STATUS "qiuckprompts version: ${QP_VERSION_STRING} "
-    "(PE ${QP_VERSION_MAJOR}.${QP_VERSION_MINOR}.${QP_VERSION_PATCH})")
+    "(PE ${QP_VERSION_MAJOR}.${QP_VERSION_MINOR}.${QP_VERSION_PATCH}, "
+    "git ${QP_GIT_HASH}, dirty=${QP_GIT_DIRTY})")
 
 add_compile_definitions(
     UNICODE
@@ -51,6 +87,8 @@ if(MSVC)
     add_compile_options(/W4 /permissive- /Zc:__cplusplus /utf-8)
     add_compile_options("$<$<CONFIG:Debug>:/Od;/Zi>")
     add_compile_options("$<$<CONFIG:RelWithDebInfo>:/O2;/Zi>")
+    # Better stacks in optimized builds (still keep /O2 via RelWithDebInfo flags above).
+    add_compile_options("$<$<CONFIG:RelWithDebInfo>:/Oy->")
     add_link_options("$<$<CONFIG:Debug>:/DEBUG:FULL>")
     add_link_options("$<$<CONFIG:RelWithDebInfo>:/DEBUG:FULL>")
 endif()
@@ -70,6 +108,7 @@ set(QP_SOURCES
     src/workflow.cpp
     src/tray.cpp
     src/util.cpp
+    src/crash_log.cpp
     resources/app.rc
 )
 
@@ -88,6 +127,7 @@ set(QP_HEADERS
     include/tray.hpp
     include/util.hpp
     include/version.hpp
+    include/crash_log.hpp
     resources/resource.h
 )
 
@@ -108,6 +148,7 @@ target_link_libraries(qiuckprompts PRIVATE
     oleaut32
     psapi
     uiautomationcore
+    dbghelp
 )
 
 # Portable layout next to the exe
