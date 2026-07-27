@@ -81,7 +81,7 @@ private:
 
     HANDLE mutex_ = nullptr;
     HANDLE shutdownEvent_ = nullptr; // named, manual-reset
-    HANDLE stopEvent_ = nullptr;     // local auto-reset — stop watcher
+    HANDLE stopEvent_ = nullptr;     // local manual-reset — stop watcher thread
     HANDLE watcherThread_ = nullptr;
     HWND watchHwnd_ = nullptr;
     bool ownsMutex_ = false;

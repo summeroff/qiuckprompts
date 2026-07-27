@@ -319,6 +319,11 @@ void SingleInstance::StopWatcher()
         watcherThread_ = nullptr;
     }
     watchHwnd_ = nullptr;
+    if (stopEvent_)
+    {
+        CloseHandle(stopEvent_);
+        stopEvent_ = nullptr;
+    }
 }
 
 bool SingleInstance::IsAnotherRunning(const std::wstring& mutexName)
@@ -339,6 +344,9 @@ bool SingleInstance::AcquireOrTakeOver(const std::wstring& mutexName,
                                        DWORD timeoutMs, std::wstring* error,
                                        const wchar_t* peerWindowClass)
 {
+    if (error)
+        error->clear();
+
     CloseAll();
 
     SetLastError(0);
@@ -364,6 +372,7 @@ bool SingleInstance::AcquireOrTakeOver(const std::wstring& mutexName,
     }
 
     // Try immediate ownership.
+    SetLastError(0);
     DWORD wr = WaitForSingleObject(mutex_, 0);
     if (wr == WAIT_OBJECT_0 || wr == WAIT_ABANDONED)
     {
@@ -376,7 +385,12 @@ bool SingleInstance::AcquireOrTakeOver(const std::wstring& mutexName,
     if (wr != WAIT_TIMEOUT)
     {
         if (error)
-            *error = L"WaitForSingleObject(mutex) failed: " + Win32ErrorMessage(wr);
+        {
+            const DWORD gle = GetLastError();
+            *error = L"WaitForSingleObject(mutex) failed"
+                     L" (wait=" +
+                     std::to_wstring(wr) + L"): " + Win32ErrorMessage(gle);
+        }
         CloseAll();
         return false;
     }
@@ -384,6 +398,7 @@ bool SingleInstance::AcquireOrTakeOver(const std::wstring& mutexName,
     // Another instance owns the mutex.
     if (!takeOver)
     {
+        // Busy — leave *error empty so the caller can offer takeover UI.
         CloseAll();
         return false;
     }
@@ -405,15 +420,22 @@ bool SingleInstance::AcquireOrTakeOver(const std::wstring& mutexName,
             PostMessageW(peer, WM_CLOSE, 0, 0);
     }
 
+    SetLastError(0);
     wr = WaitForSingleObject(mutex_, timeoutMs);
     if (wr != WAIT_OBJECT_0 && wr != WAIT_ABANDONED)
     {
         if (error)
         {
             if (wr == WAIT_TIMEOUT)
+            {
                 *error = L"Timed out waiting for the other QiuckPrompts instance to exit.";
-            else
-                *error = L"WaitForSingleObject(mutex takeover) failed: " + Win32ErrorMessage(wr);
+            } else
+            {
+                const DWORD gle = GetLastError();
+                *error = L"WaitForSingleObject(mutex takeover) failed"
+                         L" (wait=" +
+                         std::to_wstring(wr) + L"): " + Win32ErrorMessage(gle);
+            }
         }
         CloseAll();
         return false;
@@ -478,7 +500,7 @@ bool SingleInstance::StartShutdownWatcher(HWND hwnd, std::wstring* error)
     StopWatcher();
     watchHwnd_ = hwnd;
 
-    stopEvent_ = CreateEventW(nullptr, TRUE /*manual*/, FALSE, nullptr);
+    stopEvent_ = CreateEventW(nullptr, TRUE /*manual-reset stop*/, FALSE, nullptr);
     if (!stopEvent_)
     {
         if (error)

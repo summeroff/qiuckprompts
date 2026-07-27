@@ -340,8 +340,16 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         }
     }
 
-    if (!single_.AcquireOrTakeOver(QP_MUTEX_NAME_W, QP_SHUTDOWN_EVENT_NAME_W, false, 0, nullptr))
+    std::wstring acqErr;
+    if (!single_.AcquireOrTakeOver(QP_MUTEX_NAME_W, QP_SHUTDOWN_EVENT_NAME_W, false, 0, &acqErr))
     {
+        // Real IPC failure (mutex/event/wait) — not "already running".
+        if (!acqErr.empty())
+        {
+            MessageBoxW(nullptr, acqErr.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONERROR);
+            return 1;
+        }
+
         // Another instance is alive — offer to replace it (dev builds / other folder).
         bool doTakeOver = cfg_.replaceRunning;
         if (!doTakeOver)
