@@ -6,6 +6,8 @@
 #include "version.hpp"
 #include "workflow.hpp"
 #include "clipboard_image.hpp"
+#include "crash_log.hpp"
+#include "crash_test.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -392,6 +394,7 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
     }
 
     Logger::Instance().Init(logPath_, cfg_.logLevel, cfg_.console);
+    SetCrashLogPath(logPath_);
 
     // Dedicated title collection file (stable TITLE_SAMPLE lines for grepping).
     {
@@ -401,6 +404,7 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
 
     QP_LOG_INFO(L"=== %s v%s starting ===", QP_APP_DISPLAY_W,
                 Utf8ToWide(QP_VERSION_STRING).c_str());
+    QP_LOG_INFO(L"git=%s dirty=%d", Utf8ToWide(QP_GIT_HASH).c_str(), QP_GIT_DIRTY ? 1 : 0);
     QP_LOG_INFO(L"exe=%s", GetExePath().c_str());
     QP_LOG_INFO(L"log=%s level=%s pasteDelayMs=%d insertOnly=%d", logPath_.c_str(),
                 Logger::LevelName(cfg_.logLevel), cfg_.pasteDelayMs, cfg_.forceInsertOnly ? 1 : 0);
@@ -411,6 +415,14 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
     QP_LOG_INFO(L"workflow aiUrl=%s browserHint=%s pageReadyTimeoutMs=%d uia=%d",
                 cfg_.workflow.defaultAiUrl.c_str(), cfg_.workflow.browserTitleHint.c_str(),
                 cfg_.workflow.pageReadyTimeoutMs, cfg_.workflow.pageReadyUseUia ? 1 : 0);
+
+#if QP_DEV_TOOLS
+    if (cfg_.crashTest)
+    {
+        // App continues into tray/message loop; worker thread faults after a delay.
+        StartDeferredCrashTest(/*delayMs=*/2000);
+    }
+#endif
 
     // Load bindings from config file (hotkey + prompt + service URL).
     {

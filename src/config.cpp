@@ -537,6 +537,13 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
             cfg.replaceRunning = true;
             continue;
         }
+#if QP_DEV_TOOLS
+        if (arg == L"--crash-test")
+        {
+            cfg.crashTest = true;
+            continue;
+        }
+#endif
         if (arg == L"--no-uia")
         {
             cfg.workflow.pageReadyUseUia = false;

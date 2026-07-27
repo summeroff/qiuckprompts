@@ -1,4 +1,6 @@
 #include "app.hpp"
+#include "crash_log.hpp"
+#include "crash_test.hpp"
 #include "version.hpp"
 
 #include <windows.h>
@@ -55,6 +57,9 @@ void PrintHelp()
         L"  --hotkey-on-release       Fire after chord released (default)\n"
         L"  --hotkey-release-timeout=MS  Max wait for release (default 3000)\n"
         L"  --self-test               Headless checks\n"
+#if QP_DEV_TOOLS
+        L"  --crash-test              Dev: run app, crash on worker thread after ~2s\n"
+#endif
         L"  --help                    This help\n"
         L"\n"
         L"Hotkeys arm on press and run on release so Ctrl/Alt are up before\n"
@@ -81,6 +86,9 @@ void PrintHelp()
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 {
+    // Before anything else: SEH / purecall / invalid-parameter / terminate → stack into log.
+    qp::InstallCrashHandlers();
+
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!argv)
@@ -112,6 +120,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
             LocalFree(argv);
         return code;
     }
+
+#if !QP_DEV_TOOLS
+    // Production builds: reject the flag explicitly so scripts fail closed.
+    if (HasFlag(argc, argv, L"--crash-test"))
+    {
+        if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole())
+        {
+            FILE* f = nullptr;
+            freopen_s(&f, "CONOUT$", "w", stderr);
+            fwprintf(stderr, L"qiuckprompts: --crash-test not available in this build\n");
+        }
+        if (argv)
+            LocalFree(argv);
+        return 2;
+    }
+#endif
 
     qp::App app;
     code = app.Run(instance, argc, argv ? argv : nullptr);

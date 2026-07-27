@@ -54,6 +54,18 @@ Optional: edit the auto-generated release notes on GitHub after CI finishes.
 | Git tag `vX.Y.Z` | **Only** release version knob |
 | CMake `-DQP_RELEASE_VERSION=` | CI sets from the tag (no leading `v`) |
 | Default `0.0.0-dev` | Local builds, PRs, untagged CI — never looks like a release |
-| `cmake/version_build.h.in` → generated header | Feeds C++ (`QP_VERSION_STRING`) and `resources/app.rc` (PE + string File/Product version) |
+| Git short SHA | Always appended as `+g<12hex>` (and `.dirty` if the tree is dirty) |
+| `cmake/version_build.h.in` → generated header | Feeds C++ (`QP_VERSION_STRING`, `QP_GIT_HASH`) and `resources/app.rc` |
 
-Do **not** bump a version in `CMakeLists.txt` for shipping. Local Debug will show `0.0.0-dev` in the tray/About and in file Properties.
+Examples: `0.0.0-dev+g5cbcf2531f0a.dirty` · `0.3.2+g5cbcf2531f0a`
+
+Do **not** bump a version in `CMakeLists.txt` for shipping. Local Debug shows the `0.0.0-dev+g…` form in tray/About/logs.
+
+### Crashes
+
+Unhandled SEH / purecall / invalid parameter / `std::terminate` append a stack walk to the log file (`logs/qiuckprompts.log`) via dbghelp when PDBs are present. No Sentry yet — grep `CRASH` in the log.
+
+**Dev-only tools** (`--crash-test`, …) are compiled **only into Debug** (CMake `QP_ENABLE_DEV_TOOLS`). Production **RelWithDebInfo** tag zips strip them. Override locally with `-DQP_DEV_TOOLS_IN_RELWITHDEBINFO=ON` if you need the flag on a Rel build.
+
+`--crash-test` starts the app normally (tray/hotkeys), then a **worker thread** crashes after ~2s through a deep call ladder (`CrashLadder::Rung0…Rung7`) so the log stack is multi-frame.
+

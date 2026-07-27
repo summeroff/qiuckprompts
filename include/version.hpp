@@ -1,8 +1,8 @@
 #pragma once
 
-// Build identity: prefer CMake-generated version_build.h (local = 0.0.0-dev,
-// tagged CI release = tag without leading 'v'). Fallbacks keep editors happy
-// before the first configure.
+// Build identity: prefer CMake-generated version_build.h
+// (local = 0.0.0-dev+gSHORTSHA[.dirty], tagged CI = X.Y.Z+gSHORTSHA).
+// Fallbacks keep editors happy before the first configure.
 #if defined(__has_include)
 #if __has_include("version_build.h")
 #include "version_build.h"
@@ -20,9 +20,15 @@
 #endif
 
 #ifndef QP_VERSION_STRING
-#define QP_STRINGIFY2(x) #x
-#define QP_STRINGIFY(x) QP_STRINGIFY2(x)
-#define QP_VERSION_STRING "0.0.0-dev"
+#define QP_VERSION_STRING "0.0.0-dev+gunknown"
+#endif
+
+#ifndef QP_GIT_HASH
+#define QP_GIT_HASH "unknown"
+#endif
+
+#ifndef QP_GIT_DIRTY
+#define QP_GIT_DIRTY 0
 #endif
 
 #define QP_APP_NAME "qiuckprompts"
