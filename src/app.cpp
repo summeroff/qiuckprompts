@@ -8,6 +8,7 @@
 #include "clipboard_image.hpp"
 #include "crash_log.hpp"
 #include "crash_test.hpp"
+#include "ext_bridge.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -23,6 +24,7 @@ App* g_app = nullptr;
 
 App::~App()
 {
+    ExtBridge::Instance().Stop();
     tray_.Destroy();
     hotkeys_.UnregisterAll();
     if (hwnd_)
@@ -254,6 +256,15 @@ void App::OnMenuCommand(UINT cmd)
         }
         break;
     }
+    case TrayIcon::IdOpenDataDir:
+        OpenInExplorer(GetAppDataDir(true));
+        break;
+    case TrayIcon::IdOpenConfig: {
+        const std::wstring cfg = cfg_.configPath.empty() ? GetUserConfigPath() : cfg_.configPath;
+        if (!OpenTextFile(cfg))
+            OpenInExplorer(GetAppDataDir(true));
+        break;
+    }
     default:
         break;
     }
@@ -273,12 +284,21 @@ void App::ShowAbout()
     text += cfg_.workflow.browserTitleHint;
     text += L"\nMode: ";
     text += cfg_.forceInsertOnly ? L"insert-only" : L"send-to-AI";
-    text += L"\n\nLog: ";
+    text += L"\nExtension: ";
+    text +=
+        cfg_.workflow.preferExtension
+            ? (ExtBridge::Instance().IsExtensionReady() ? L"connected" : L"prefer (not connected)")
+            : L"disabled";
+    text += L"\n\nData: ";
+    text += GetAppDataDir(false);
+    text += L"\nConfig: ";
+    text += cfg_.configPath.empty() ? L"(none)" : cfg_.configPath;
+    text += L"\nLog: ";
     text += logPath_.empty() ? L"(none)" : logPath_;
     text += L"\nTitles: ";
     text += TitleSampleLogPath().empty() ? L"(none)" : TitleSampleLogPath();
     text += L"\n\nTray → Sample window titles now  (after opening AI tabs)\n"
-            L"Then open titles.log and look for TITLE_SAMPLE lines.";
+            L"Load unpacked extension from the extension/ folder for DOM paste.";
 
     MessageBoxW(nullptr, text.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONINFORMATION);
 }
@@ -386,11 +406,11 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         }
     }
 
-    // Log path default: <exe>/logs/qiuckprompts.log  (portable, easy to find while developing)
+    // Log path default: %LOCALAPPDATA%\QiuckPrompts\logs\qiuckprompts.log
     logPath_ = cfg_.logPath;
     if (logPath_.empty())
     {
-        logPath_ = PathJoin({GetExeDir(), L"logs", L"qiuckprompts.log"});
+        logPath_ = PathJoin(GetUserLogsDir(true), L"qiuckprompts.log");
     }
 
     Logger::Instance().Init(logPath_, cfg_.logLevel, cfg_.console);
@@ -398,7 +418,7 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
 
     // Dedicated title collection file (stable TITLE_SAMPLE lines for grepping).
     {
-        const std::wstring titlesPath = PathJoin({GetExeDir(), L"logs", L"titles.log"});
+        const std::wstring titlesPath = PathJoin(GetUserLogsDir(true), L"titles.log");
         SetTitleSampleLogPath(titlesPath);
     }
 
@@ -406,15 +426,17 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
                 Utf8ToWide(QP_VERSION_STRING).c_str());
     QP_LOG_INFO(L"git=%s dirty=%d", Utf8ToWide(QP_GIT_HASH).c_str(), QP_GIT_DIRTY ? 1 : 0);
     QP_LOG_INFO(L"exe=%s", GetExePath().c_str());
+    QP_LOG_INFO(L"dataDir=%s", GetAppDataDir(false).c_str());
     QP_LOG_INFO(L"log=%s level=%s pasteDelayMs=%d insertOnly=%d", logPath_.c_str(),
                 Logger::LevelName(cfg_.logLevel), cfg_.pasteDelayMs, cfg_.forceInsertOnly ? 1 : 0);
     QP_LOG_INFO(L"titles.log=%s  (grep TITLE_SAMPLE)", TitleSampleLogPath().c_str());
     QP_LOG_INFO(L"hotkey trigger=%s releaseTimeoutMs=%d pollMs=%d",
                 HotkeyTriggerModeName(cfg_.hotkeyTrigger), cfg_.hotkeyReleaseTimeoutMs,
                 cfg_.hotkeyReleasePollMs);
-    QP_LOG_INFO(L"workflow aiUrl=%s browserHint=%s pageReadyTimeoutMs=%d uia=%d",
+    QP_LOG_INFO(L"workflow aiUrl=%s browserHint=%s pageReadyTimeoutMs=%d uia=%d preferExt=%d",
                 cfg_.workflow.defaultAiUrl.c_str(), cfg_.workflow.browserTitleHint.c_str(),
-                cfg_.workflow.pageReadyTimeoutMs, cfg_.workflow.pageReadyUseUia ? 1 : 0);
+                cfg_.workflow.pageReadyTimeoutMs, cfg_.workflow.pageReadyUseUia ? 1 : 0,
+                cfg_.workflow.preferExtension ? 1 : 0);
 
 #if QP_DEV_TOOLS
     if (cfg_.crashTest)
@@ -437,6 +459,38 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
             QP_LOG_INFO(L"config loaded: %s (%zu bindings)", cfg_.configPath.c_str(),
                         cfg_.bindings.size());
         }
+    }
+
+    // CLI --no-extension wins over ini prefer_extension= (LoadConfigFile runs after argv parse).
+    if (argv)
+    {
+        for (int i = 1; i < argc; ++i)
+        {
+            if (argv[i] && wcscmp(argv[i], L"--no-extension") == 0)
+            {
+                cfg_.workflow.preferExtension = false;
+                break;
+            }
+        }
+    }
+
+    // Native messaging host registration + pipe server for MV3 companion.
+    // Skip entirely when extension support is disabled (--no-extension / prefer_extension=0).
+    if (cfg_.workflow.preferExtension)
+    {
+        std::wstring nmErr;
+        if (!EnsureNativeMessagingRegistration(cfg_.extensionId, &nmErr))
+        {
+            QP_LOG_WARN(L"native messaging registration failed: %s", nmErr.c_str());
+        }
+        std::wstring brErr;
+        if (!ExtBridge::Instance().Start(&brErr))
+        {
+            QP_LOG_WARN(L"ext_bridge start failed: %s", brErr.c_str());
+        }
+    } else
+    {
+        QP_LOG_INFO(L"extension support disabled — skip NM registration and pipe server");
     }
 
     // Baseline snapshot at startup (whatever browsers are already open).
@@ -621,13 +675,32 @@ int App::RunSelfTest()
 
     expect(!GetExeDir().empty(), L"GetExeDir");
     expect(!GetExePath().empty(), L"GetExePath");
-    const std::wstring logDir = PathJoin(GetExeDir(), L"logs");
-    expect(EnsureDirectory(logDir), L"EnsureDirectory(logs)");
+    expect(!GetAppDataDir(true).empty(), L"GetAppDataDir");
+    expect(DirectoryExists(GetAppDataDir(false)), L"AppData dir exists");
+    {
+        std::wstring userCfg;
+        std::wstring seedErr;
+        expect(EnsureUserConfigFile(&userCfg, &seedErr) ||
+                   FileExists(GetInstallConfigTemplatePath()),
+               L"EnsureUserConfigFile or template");
+        if (!userCfg.empty())
+            wprintf(L"[ OK ] user config path %s\n", userCfg.c_str());
+    }
+    const std::wstring logDir = GetUserLogsDir(true);
+    expect(EnsureDirectory(logDir), L"EnsureDirectory(user logs)");
     const std::wstring logFile = PathJoin(logDir, L"self-test.log");
     Logger::Instance().Init(logFile, LogLevel::Trace, true);
     QP_LOG_INFO(L"self-test log line");
     Logger::Instance().Shutdown();
     expect(FileExists(logFile), L"log file created");
+
+    {
+        expect(JsonEscape("a\"b") == "a\\\"b", L"JsonEscape quote");
+        std::string s;
+        expect(JsonGetString("{\"detail\":\"hi\"}", "detail", s) && s == "hi", L"JsonGetString");
+        bool b = false;
+        expect(JsonGetBool("{\"ok\":true}", "ok", b) && b, L"JsonGetBool");
+    }
 
     wprintf(L"\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

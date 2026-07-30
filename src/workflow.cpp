@@ -1,6 +1,7 @@
 #include "workflow.hpp"
 #include "browser.hpp"
 #include "clipboard_image.hpp"
+#include "ext_bridge.hpp"
 #include "input_sim.hpp"
 #include "logger.hpp"
 #include "page_ready.hpp"
@@ -162,6 +163,34 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
     const std::wstring payload = BuildPromptPayload(req.promptBody, editorText, fence);
     QP_LOG_INFO(L"workflow: payload %zu wchar fence=%d preview='%s'", payload.size(), fence ? 1 : 0,
                 PayloadPreview(payload, 200).c_str());
+
+    // --- Extension path (DOM) when companion is connected ---
+    // Image paste still needs clipboard + browser focus (extension text-only for now).
+    if (cfg_.preferExtension && ExtBridge::Instance().IsExtensionReady() &&
+        !req.requireClipboardImage)
+    {
+        QP_LOG_INFO(L"workflow: trying Chrome extension prepareAndPaste");
+        std::wstring detail;
+        std::wstring extErr;
+        const DWORD extTimeout =
+            static_cast<DWORD>((std::max)(cfg_.pageReadyTimeoutMs, 5000) + 5000);
+        if (ExtBridge::Instance().PrepareAndPaste(url, payload, extTimeout, &detail, &extErr))
+        {
+            QP_LOG_INFO(L"workflow: extension paste OK (%s)", detail.c_str());
+            // Extension set the composer via DOM — no clipboard hold required for SPA race.
+            // Still restore user clip (we may have touched it for editor capture only).
+            if (cfg_.afterFinalPasteMs > 0)
+                Sleep(static_cast<DWORD>(cfg_.afterFinalPasteMs));
+            restoreClip();
+            QP_LOG_INFO(L"workflow: DONE (extension)");
+            return true;
+        }
+        QP_LOG_WARN(L"workflow: extension path failed (%s) — falling back to UIA",
+                    extErr.empty() ? detail.c_str() : extErr.c_str());
+    } else if (cfg_.preferExtension)
+    {
+        QP_LOG_DEBUG(L"workflow: extension not connected — UIA path");
+    }
 
     BrowserTarget browser;
     if (!FindBrowserWindow(cfg_.browserTitleHint, browser, error))

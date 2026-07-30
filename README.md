@@ -27,7 +27,13 @@ Pure **Win32 + C++17**. No third-party libraries. Built to debug, trace, and ext
 
 ## Configuration file
 
-**One file:** `config/qiuckprompts.ini` (copied next to the exe on build).
+**User config (edit this):** `%LOCALAPPDATA%\QiuckPrompts\qiuckprompts.ini`  
+Seeded on first run from the install template (`<exe>\config\qiuckprompts.ini`).  
+Updates never overwrite the user file. Backups live in `%LOCALAPPDATA%\QiuckPrompts\backups\`.
+
+**Logs:** `%LOCALAPPDATA%\QiuckPrompts\logs\` (`qiuckprompts.log`, `titles.log`; rotated ~5 MiB × 4 files).
+
+Tray → **Open config** / **Open data folder**. Override path: `--config=D:\path\qiuckprompts.ini`
 
 Each `[section]` binds **hotkey + service URL + full prompt text**:
 
@@ -123,11 +129,23 @@ build\Debug\qiuckprompts.exe --self-test
 | `--page-ready-timeout=MS` | Max wait for page/input (default 15000) |
 | `--page-ready-min=MS` | Min wait after navigate (default 500) |
 | `--no-uia` | Title-only wait (disable UI Automation) |
+| `--no-extension` | Skip Chrome companion; UIA-only path |
 | `--hotkey-on-press` | Fire on key-down (default is on-release) |
 | `--hotkey-release-timeout=MS` | Max wait for key-up (default 3000) |
 | `--insert-only` | Paste template only (no browser flow) |
+| `--config=PATH` | Override user ini path |
 | `--self-test` | Headless checks, exit 0/1 |
 | `--help` | Help text |
+
+## Chrome companion extension
+
+Optional **MV3** extension gives reliable DOM paste (preferred over UIA when connected).
+
+1. Run the tray app once (registers native messaging host under `%LOCALAPPDATA%\QiuckPrompts\nm\`).
+2. Chrome/Edge → Developer mode → **Load unpacked** → `extension/` (or `build\Debug\extension`).
+3. Keep extension enabled; id should be `aodehlngahndannepofbddnacfaldmih`.
+
+Details: [extension/README.md](extension/README.md). Disable with `prefer_extension=0` or `--no-extension`.
 
 ## Releases
 
@@ -175,7 +193,9 @@ Use feature branches and squash-merge PRs into `master` — details in [CONTRIBU
 | Path | Role |
 |------|------|
 | `include/config.hpp` | Templates, hotkeys, workflow knobs |
-| `src/workflow.cpp` | Send-to-AI pipeline |
+| `src/workflow.cpp` | Send-to-AI pipeline (extension → UIA fallback) |
+| `src/ext_bridge.cpp` | Named pipe + native-messaging host relay |
+| `extension/` | MV3 companion (DOM composer paste) |
 | `src/browser.cpp` | Find / activate browser window |
 | `src/page_ready.cpp` | Title + UI Automation wait |
 | `src/title_sample.cpp` | `TITLE_SAMPLE` → `titles.log` |
@@ -198,7 +218,8 @@ Lines are tagged `TITLE_SAMPLE` with stable `where=` fields.
 
 ## Design notes
 
-- Chrome does **not** expose the chat box as a Win32 `HWND`. Readiness uses the **UI Automation** accessibility tree plus the tab title.
+- User data lives under **`%LOCALAPPDATA%\QiuckPrompts`** so installers/updates cannot clobber config or logs.
+- Chrome does **not** expose the chat box as a Win32 `HWND`. Prefer the **MV3 companion** (DOM); readiness otherwise uses the **UI Automation** tree plus the tab title.
 - Hotkeys **arm on press** and **run on release** so Ctrl/Alt are up before Select-all/Copy/Paste.
 - No Qt/WPF/Electron — message-only window + tray only.
 

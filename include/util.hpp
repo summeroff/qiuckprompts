@@ -11,7 +11,12 @@ namespace qp
 // Paths
 std::wstring GetExeDir();
 std::wstring GetExePath();
+// %LOCALAPPDATA%\QiuckPrompts — config, logs, backups, native-messaging host files.
 std::wstring GetAppDataDir(bool ensure = true);
+std::wstring GetUserConfigPath();
+std::wstring GetUserLogsDir(bool ensure = true);
+std::wstring GetUserBackupsDir(bool ensure = true);
+std::wstring GetInstallConfigTemplatePath();
 std::wstring PathJoin(const std::wstring& a, const std::wstring& b);
 std::wstring PathJoin(std::initializer_list<std::wstring> parts);
 
@@ -20,6 +25,15 @@ bool FileExists(const std::wstring& path);
 bool EnsureDirectory(const std::wstring& path);
 bool OpenInExplorer(const std::wstring& path);
 bool OpenTextFile(const std::wstring& path);
+bool CopyFilePath(const std::wstring& src, const std::wstring& dst, bool failIfExists = false);
+// Timestamped copy under backups\; keeps newest maxKeep (default 5).
+bool BackupFileToUserBackups(const std::wstring& srcPath, int maxKeep = 5,
+                             std::wstring* backupPathOut = nullptr);
+// Seed AppData ini from install template (or migrate exe-adjacent). Does not overwrite
+// an existing user ini. Returns resolved user config path.
+bool EnsureUserConfigFile(std::wstring* resolvedPath, std::wstring* error = nullptr);
+// Rotate log-style files: name.log -> name.1.log ... keep maxFiles-1 older copies.
+bool RotateLogFile(const std::wstring& logPath, int maxFiles = 4);
 
 // UTF-8 / wide
 std::wstring Utf8ToWide(const std::string& utf8);
