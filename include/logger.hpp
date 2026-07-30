@@ -5,6 +5,7 @@
 #include <string>
 #include <mutex>
 #include <cstdarg>
+#include <cstdint>
 
 namespace qp
 {
@@ -20,12 +21,18 @@ enum class LogLevel
 };
 
 // Thread-safe logger: file + OutputDebugStringW (+ optional stdout if console).
+// Rotates the active file when it exceeds maxBytes (default 5 MiB), keeping
+// maxFiles total (name.log + name.1.log …).
 class Logger
 {
 public:
+    static constexpr std::uint64_t kDefaultMaxBytes = 5ull * 1024ull * 1024ull;
+    static constexpr int kDefaultMaxFiles = 4; // current + 3 rotated
+
     static Logger& Instance();
 
-    void Init(const std::wstring& logFilePath, LogLevel level, bool mirrorStdout = false);
+    void Init(const std::wstring& logFilePath, LogLevel level, bool mirrorStdout = false,
+              std::uint64_t maxBytes = kDefaultMaxBytes, int maxFiles = kDefaultMaxFiles);
     void Shutdown();
 
     void SetLevel(LogLevel level);
@@ -39,11 +46,18 @@ public:
 
 private:
     Logger() = default;
+    void RotateIfNeededUnlocked();
+    bool OpenFileUnlocked();
+
     mutable std::mutex mutex_;
     LogLevel level_ = LogLevel::Info;
     bool mirrorStdout_ = false;
     HANDLE file_ = INVALID_HANDLE_VALUE;
     bool initialized_ = false;
+    std::wstring path_;
+    std::uint64_t maxBytes_ = kDefaultMaxBytes;
+    int maxFiles_ = kDefaultMaxFiles;
+    std::uint64_t writtenThisSession_ = 0;
 };
 
 } // namespace qp

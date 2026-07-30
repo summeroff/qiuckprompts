@@ -3,6 +3,7 @@
 
 #include <shellapi.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <vector>
@@ -56,12 +57,38 @@ std::wstring GetAppDataDir(bool ensure)
     {
         root = GetExeDir();
     }
-    std::wstring dir = PathJoin(root, QP_APP_NAME_W);
+    std::wstring dir = PathJoin(root, QP_USER_DATA_NAME_W);
     if (ensure)
     {
         EnsureDirectory(dir);
     }
     return dir;
+}
+
+std::wstring GetUserConfigPath()
+{
+    return PathJoin(GetAppDataDir(true), L"qiuckprompts.ini");
+}
+
+std::wstring GetUserLogsDir(bool ensure)
+{
+    const std::wstring dir = PathJoin(GetAppDataDir(true), L"logs");
+    if (ensure)
+        EnsureDirectory(dir);
+    return dir;
+}
+
+std::wstring GetUserBackupsDir(bool ensure)
+{
+    const std::wstring dir = PathJoin(GetAppDataDir(true), L"backups");
+    if (ensure)
+        EnsureDirectory(dir);
+    return dir;
+}
+
+std::wstring GetInstallConfigTemplatePath()
+{
+    return PathJoin({GetExeDir(), L"config", L"qiuckprompts.ini"});
 }
 
 std::wstring PathJoin(const std::wstring& a, const std::wstring& b)
@@ -163,6 +190,183 @@ bool OpenTextFile(const std::wstring& path)
     INT_PTR rc = reinterpret_cast<INT_PTR>(
         ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
     return rc > 32;
+}
+
+bool CopyFilePath(const std::wstring& src, const std::wstring& dst, bool failIfExists)
+{
+    if (src.empty() || dst.empty())
+        return false;
+    {
+        const size_t slash = dst.find_last_of(L"\\/");
+        if (slash != std::wstring::npos)
+            EnsureDirectory(dst.substr(0, slash));
+    }
+    return CopyFileW(src.c_str(), dst.c_str(), failIfExists ? TRUE : FALSE) != 0;
+}
+
+namespace
+{
+
+void PruneBackupFiles(const std::wstring& backupsDir, int maxKeep)
+{
+    if (maxKeep < 1 || !DirectoryExists(backupsDir))
+        return;
+
+    const std::wstring pattern = PathJoin(backupsDir, L"qiuckprompts-*.ini");
+    WIN32_FIND_DATAW fd{};
+    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+
+    std::vector<std::wstring> names;
+    do
+    {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            continue;
+        names.push_back(fd.cFileName);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+
+    if (static_cast<int>(names.size()) <= maxKeep)
+        return;
+
+    std::sort(names.begin(), names.end()); // timestamps in name → oldest first
+    const int removeCount = static_cast<int>(names.size()) - maxKeep;
+    for (int i = 0; i < removeCount; ++i)
+    {
+        DeleteFileW(PathJoin(backupsDir, names[static_cast<size_t>(i)]).c_str());
+    }
+}
+
+} // namespace
+
+bool BackupFileToUserBackups(const std::wstring& srcPath, int maxKeep, std::wstring* backupPathOut)
+{
+    if (!FileExists(srcPath))
+        return false;
+
+    const std::wstring backups = GetUserBackupsDir(true);
+    SYSTEMTIME st{};
+    GetLocalTime(&st);
+    wchar_t name[64];
+    swprintf(name, 64, L"qiuckprompts-%04u%02u%02u-%02u%02u%02u.ini", st.wYear, st.wMonth, st.wDay,
+             st.wHour, st.wMinute, st.wSecond);
+    const std::wstring dst = PathJoin(backups, name);
+    if (!CopyFilePath(srcPath, dst, false))
+        return false;
+    PruneBackupFiles(backups, maxKeep < 1 ? 5 : maxKeep);
+    if (backupPathOut)
+        *backupPathOut = dst;
+    return true;
+}
+
+bool EnsureUserConfigFile(std::wstring* resolvedPath, std::wstring* error)
+{
+    const std::wstring userPath = GetUserConfigPath();
+    if (FileExists(userPath))
+    {
+        if (resolvedPath)
+            *resolvedPath = userPath;
+        return true;
+    }
+
+    // Prefer migrate customized next-to-exe configs; install template is last resort.
+    const std::wstring candidates[] = {
+        PathJoin({GetExeDir(), L"config", L"qiuckprompts.ini"}),
+        PathJoin(GetExeDir(), L"qiuckprompts.ini"),
+        GetInstallConfigTemplatePath(),
+    };
+
+    std::wstring src;
+    for (const auto& c : candidates)
+    {
+        if (FileExists(c))
+        {
+            src = c;
+            break;
+        }
+    }
+
+    if (src.empty())
+    {
+        if (error)
+            *error = L"no config template found (install config/qiuckprompts.ini missing)";
+        return false;
+    }
+
+    if (!CopyFilePath(src, userPath, true))
+    {
+        // Race: another process created it
+        if (FileExists(userPath))
+        {
+            if (resolvedPath)
+                *resolvedPath = userPath;
+            return true;
+        }
+        if (error)
+            *error = L"failed to seed user config: " + LastErrorMessage();
+        return false;
+    }
+
+    if (resolvedPath)
+        *resolvedPath = userPath;
+    return true;
+}
+
+bool RotateLogFile(const std::wstring& logPath, int maxFiles)
+{
+    if (logPath.empty() || maxFiles < 2)
+        return false;
+    if (!FileExists(logPath))
+        return true;
+
+    // Split dir / base / ext:  ...\name.log  → baseStem=name, ext=.log
+    std::wstring dir, file;
+    const size_t slash = logPath.find_last_of(L"\\/");
+    if (slash == std::wstring::npos)
+    {
+        file = logPath;
+    } else
+    {
+        dir = logPath.substr(0, slash);
+        file = logPath.substr(slash + 1);
+    }
+    std::wstring stem = file;
+    std::wstring ext;
+    const size_t dot = file.find_last_of(L'.');
+    if (dot != std::wstring::npos)
+    {
+        stem = file.substr(0, dot);
+        ext = file.substr(dot); // includes '.'
+    }
+
+    auto pathForIndex = [&](int idx) -> std::wstring {
+        if (idx <= 0)
+            return logPath;
+        wchar_t buf[32];
+        swprintf(buf, 32, L".%d", idx);
+        return PathJoin(dir.empty() ? L"." : dir, stem + buf + ext);
+    };
+
+    // Delete oldest
+    DeleteFileW(pathForIndex(maxFiles - 1).c_str());
+    for (int i = maxFiles - 2; i >= 1; --i)
+    {
+        const std::wstring from = pathForIndex(i);
+        const std::wstring to = pathForIndex(i + 1);
+        if (FileExists(from))
+        {
+            DeleteFileW(to.c_str());
+            MoveFileW(from.c_str(), to.c_str());
+        }
+    }
+    {
+        const std::wstring to = pathForIndex(1);
+        DeleteFileW(to.c_str());
+        if (!MoveFileW(logPath.c_str(), to.c_str()))
+            return false;
+    }
+    return true;
 }
 
 std::wstring Utf8ToWide(const std::string& utf8)

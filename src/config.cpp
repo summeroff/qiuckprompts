@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "logger.hpp"
+#include "version.hpp"
 
 #include <fstream>
 #include <map>
@@ -267,20 +268,27 @@ void GetBuiltinBindings(std::vector<HotkeyBinding>& out)
 
 bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstring* error)
 {
+    cfg.dataDir = GetAppDataDir(true);
+
     std::wstring path = pathOrEmpty;
     if (path.empty())
     {
-        const std::wstring a = PathJoin({GetExeDir(), L"config", L"qiuckprompts.ini"});
-        const std::wstring b = PathJoin(GetExeDir(), L"qiuckprompts.ini");
-        if (FileExists(a))
-            path = a;
-        else if (FileExists(b))
-            path = b;
-        else
+        std::wstring seedErr;
+        if (!EnsureUserConfigFile(&path, &seedErr))
         {
-            if (error)
-                *error = L"no config file (tried config/qiuckprompts.ini)";
-            return false;
+            // Last-chance: load install template in-place without copying (read-only run).
+            const std::wstring tmpl = GetInstallConfigTemplatePath();
+            if (FileExists(tmpl))
+            {
+                path = tmpl;
+                QP_LOG_WARN(L"config: could not seed AppData (%s) — reading template %s",
+                            seedErr.c_str(), tmpl.c_str());
+            } else
+            {
+                if (error)
+                    *error = seedErr.empty() ? L"no config file" : seedErr;
+                return false;
+            }
         }
     }
     if (!FileExists(path))
@@ -288,6 +296,43 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
         if (error)
             *error = L"config not found: " + path;
         return false;
+    }
+
+    // Empty / unreadable user file → try newest backup once.
+    {
+        WIN32_FILE_ATTRIBUTE_DATA fad{};
+        if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fad))
+        {
+            ULARGE_INTEGER uli{};
+            uli.HighPart = fad.nFileSizeHigh;
+            uli.LowPart = fad.nFileSizeLow;
+            if (uli.QuadPart == 0)
+            {
+                const std::wstring backups = GetUserBackupsDir(false);
+                // pick newest qiuckprompts-*.ini by name
+                WIN32_FIND_DATAW fd{};
+                HANDLE h = FindFirstFileW(PathJoin(backups, L"qiuckprompts-*.ini").c_str(), &fd);
+                std::wstring best;
+                if (h != INVALID_HANDLE_VALUE)
+                {
+                    do
+                    {
+                        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                            continue;
+                        if (best.empty() || fd.cFileName > best)
+                            best = fd.cFileName;
+                    } while (FindNextFileW(h, &fd));
+                    FindClose(h);
+                }
+                if (!best.empty())
+                {
+                    const std::wstring bp = PathJoin(backups, best);
+                    QP_LOG_WARN(L"config: user ini empty — restoring backup %s", bp.c_str());
+                    BackupFileToUserBackups(path); // keep the empty one too
+                    CopyFilePath(bp, path, false);
+                }
+            }
+        }
     }
 
     cfg.configPath = path;
@@ -395,6 +440,10 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
             cfg.workflow.fenceEditorText = get(L"fence_editor_text") != L"0";
         if (!get(L"default_ai_url").empty())
             cfg.workflow.defaultAiUrl = get(L"default_ai_url");
+        if (!get(L"prefer_extension").empty())
+            cfg.workflow.preferExtension = get(L"prefer_extension") != L"0";
+        if (!get(L"extension_id").empty())
+            cfg.extensionId = Trim(get(L"extension_id"));
     }
 
     cfg.bindings.clear();
@@ -547,6 +596,16 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         if (arg == L"--no-uia")
         {
             cfg.workflow.pageReadyUseUia = false;
+            continue;
+        }
+        if (arg == L"--no-extension")
+        {
+            cfg.workflow.preferExtension = false;
+            continue;
+        }
+        if (arg == L"--native-messaging-host")
+        {
+            // Handled in wWinMain before App::Run; ignore here.
             continue;
         }
         if (arg == L"--hotkey-on-press")

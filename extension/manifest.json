@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "QiuckPrompts Companion",
+  "version": "0.1.1",
+  "description": "DOM paste/ready helper for the QiuckPrompts tray app (native messaging).",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9SlS2cKF57nHLdIf6BadZi2NHc4T6AtCoH2ZqhBpt7EvKjKLNbo9rqE7c9jJ1OqsmVJhLQclTVzkdt+egygkSi6PeUx5IFE1RxLYtqVIhMyU/hUIGypZBm1AFUmUkfIrcos9a9qAJoV2KIgHBZRtbpYCbpTEhjoNOLrN4tmPtMk+BnMqCsLfNeEwKcx2ZTQRIoO6HKAMeJrZ3meoNW0zT3wuTxnUzWx8ptjsLIPMFQmeGtAlgQCCy9PM3gB5/bn3YK/+GXScrXFa/6jTGd1S64kt248M5QUaRZB0rmOkYS9zhkt2p6oT1ntyxr5Ut2naFkV2OepFvNU5SoYMg7c+XwIDAQAB",
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.meta.ai/*",
+    "https://meta.ai/*",
+    "https://gemini.google.com/*",
+    "https://grok.com/*",
+    "https://x.com/*",
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://www.perplexity.ai/*",
+    "https://copilot.microsoft.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.meta.ai/*",
+        "https://meta.ai/*",
+        "https://gemini.google.com/*",
+        "https://grok.com/*",
+        "https://x.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://copilot.microsoft.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_title": "QiuckPrompts Companion"
+  }
+}

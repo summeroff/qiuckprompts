@@ -23,6 +23,8 @@ public:
         IdToggleInsertOnly = 1005,
         IdSampleTitles = 1006,
         IdOpenTitlesLog = 1007,
+        IdOpenDataDir = 1008,
+        IdOpenConfig = 1009,
     };
 
     TrayIcon() = default;

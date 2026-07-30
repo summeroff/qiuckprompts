@@ -122,6 +122,7 @@ set(QP_SOURCES
     src/util.cpp
     src/crash_log.cpp
     src/crash_test.cpp
+    src/ext_bridge.cpp
     resources/app.rc
 )
 
@@ -142,6 +143,7 @@ set(QP_HEADERS
     include/version.hpp
     include/crash_log.hpp
     include/crash_test.hpp
+    include/ext_bridge.hpp
     resources/resource.h
 )
 
@@ -174,14 +176,19 @@ target_link_libraries(qiuckprompts PRIVATE
     dbghelp
 )
 
-# Portable layout next to the exe
+# Portable layout next to the exe (install template + unpacked extension for dev)
 add_custom_command(TARGET qiuckprompts POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E remove_directory
         "$<TARGET_FILE_DIR:qiuckprompts>/config"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/config"
         "$<TARGET_FILE_DIR:qiuckprompts>/config"
-    COMMENT "Copy config/qiuckprompts.ini beside executable"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_FILE_DIR:qiuckprompts>/extension"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/extension"
+        "$<TARGET_FILE_DIR:qiuckprompts>/extension"
+    COMMENT "Copy config/ + extension/ beside executable"
 )
 
 enable_testing()
@@ -189,3 +196,4 @@ add_test(NAME self_test COMMAND qiuckprompts --self-test)
 
 install(TARGETS qiuckprompts RUNTIME DESTINATION bin)
 install(DIRECTORY config/ DESTINATION bin/config)
+install(DIRECTORY extension/ DESTINATION bin/extension)

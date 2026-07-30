@@ -16,11 +16,65 @@ Logger& Logger::Instance()
     return g;
 }
 
-void Logger::Init(const std::wstring& logFilePath, LogLevel level, bool mirrorStdout)
+bool Logger::OpenFileUnlocked()
+{
+    if (path_.empty())
+        return false;
+
+    const size_t pos = path_.find_last_of(L"\\/");
+    if (pos != std::wstring::npos)
+        EnsureDirectory(path_.substr(0, pos));
+
+    // Pre-rotate if existing file already oversized.
+    if (FileExists(path_) && maxBytes_ > 0)
+    {
+        WIN32_FILE_ATTRIBUTE_DATA fad{};
+        if (GetFileAttributesExW(path_.c_str(), GetFileExInfoStandard, &fad))
+        {
+            ULARGE_INTEGER uli{};
+            uli.HighPart = fad.nFileSizeHigh;
+            uli.LowPart = fad.nFileSizeLow;
+            if (uli.QuadPart >= maxBytes_)
+            {
+                RotateLogFile(path_, maxFiles_);
+            }
+        }
+    }
+
+    file_ = CreateFileW(path_.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    writtenThisSession_ = 0;
+    if (file_ != INVALID_HANDLE_VALUE)
+    {
+        LARGE_INTEGER sz{};
+        if (GetFileSizeEx(file_, &sz) && sz.QuadPart > 0)
+            writtenThisSession_ = static_cast<std::uint64_t>(sz.QuadPart);
+    }
+    return file_ != INVALID_HANDLE_VALUE;
+}
+
+void Logger::RotateIfNeededUnlocked()
+{
+    if (file_ == INVALID_HANDLE_VALUE || path_.empty() || maxBytes_ == 0)
+        return;
+    if (writtenThisSession_ < maxBytes_)
+        return;
+
+    CloseHandle(file_);
+    file_ = INVALID_HANDLE_VALUE;
+    RotateLogFile(path_, maxFiles_);
+    OpenFileUnlocked();
+}
+
+void Logger::Init(const std::wstring& logFilePath, LogLevel level, bool mirrorStdout,
+                  std::uint64_t maxBytes, int maxFiles)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     level_ = level;
     mirrorStdout_ = mirrorStdout;
+    maxBytes_ = maxBytes;
+    maxFiles_ = maxFiles < 2 ? 2 : maxFiles;
+    path_ = logFilePath;
 
     if (file_ != INVALID_HANDLE_VALUE)
     {
@@ -29,23 +83,9 @@ void Logger::Init(const std::wstring& logFilePath, LogLevel level, bool mirrorSt
     }
 
     if (!logFilePath.empty())
-    {
-        // Ensure parent directory
-        const size_t pos = logFilePath.find_last_of(L"\\/");
-        if (pos != std::wstring::npos)
-        {
-            EnsureDirectory(logFilePath.substr(0, pos));
-        }
-
-        file_ =
-            CreateFileW(logFilePath.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    }
+        OpenFileUnlocked();
 
     initialized_ = true;
-
-    // Write a session banner without re-entering through macros (lock held).
-    // Unlock-free direct write:
 }
 
 void Logger::Shutdown()
@@ -114,7 +154,6 @@ void Logger::Log(LogLevel level, const char* file, int line, const char* func,
     SYSTEMTIME st{};
     GetLocalTime(&st);
 
-    // Basename only
     const char* base = file;
     for (const char* p = file; *p; ++p)
     {
@@ -145,7 +184,11 @@ void Logger::Log(LogLevel level, const char* file, int line, const char* func,
     {
         const std::string utf8 = WideToUtf8(lineOut);
         DWORD written = 0;
-        WriteFile(file_, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr);
+        if (WriteFile(file_, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr))
+        {
+            writtenThisSession_ += written;
+            RotateIfNeededUnlocked();
+        }
     }
 }
 
@@ -160,7 +203,6 @@ std::wstring FormatLog(const wchar_t* fmt, ...)
     va_list ap;
     va_start(ap, fmt);
 
-    // First pass: measure
     va_list ap2;
     va_copy(ap2, ap);
     const int needed = _vscwprintf(fmt, ap2);

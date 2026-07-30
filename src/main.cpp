@@ -1,6 +1,7 @@
 #include "app.hpp"
 #include "crash_log.hpp"
 #include "crash_test.hpp"
+#include "ext_bridge.hpp"
 #include "version.hpp"
 
 #include <windows.h>
@@ -51,11 +52,13 @@ void PrintHelp()
         L"  --page-ready-timeout=MS   Max wait for page/input (default 15000)\n"
         L"  --page-ready-min=MS       Min wait after navigate (default 500)\n"
         L"  --no-uia                  Disable UI Automation; title-only wait\n"
+        L"  --no-extension            Skip Chrome companion; UIA-only paste path\n"
         L"  --insert-only             Paste template only (no browser flow)\n"
         L"  --replace-running         If already running, close it and start this build\n"
         L"  --hotkey-on-press         Fire on key-down (default: on key-up/release)\n"
         L"  --hotkey-on-release       Fire after chord released (default)\n"
         L"  --hotkey-release-timeout=MS  Max wait for release (default 3000)\n"
+        L"  --config=PATH             Override ini path (default: %LOCALAPPDATA%\\QiuckPrompts\\)\n"
         L"  --self-test               Headless checks\n"
 #if QP_DEV_TOOLS
         L"  --crash-test              Dev: run app, crash on worker thread after ~2s\n"
@@ -65,10 +68,10 @@ void PrintHelp()
         L"Hotkeys arm on press and run on release so Ctrl/Alt are up before\n"
         L"select-all/copy/paste. While a workflow runs, further hotkeys are ignored.\n"
         L"\n"
-        L"Page ready: Chrome inputs are NOT Win32 HWNDs. We wait on tab title\n"
-        L"+ UI Automation Edit control (accessibility tree), then paste.\n"
+        L"Page ready: prefers Chrome MV3 companion (DOM); falls back to tab title\n"
+        L"+ UI Automation Edit control. User data: %LOCALAPPDATA%\\QiuckPrompts\\\n"
         L"\n"
-        L"Edit templates/hotkeys in include/config.hpp and rebuild.\n";
+        L"Edit config via tray → Open config (not the install folder copy).\n";
 
     if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole())
     {
@@ -104,6 +107,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         if (argv)
             LocalFree(argv);
         return 0;
+    }
+
+    if (HasFlag(argc, argv, L"--native-messaging-host"))
+    {
+        // Chrome/Edge launches this as a short-lived stdio host — no tray.
+        const int nm = qp::RunNativeMessagingHost();
+        if (argv)
+            LocalFree(argv);
+        return nm;
     }
 
     if (HasFlag(argc, argv, L"--self-test"))

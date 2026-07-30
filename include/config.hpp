@@ -3,6 +3,7 @@
 #include "logger.hpp"
 #include "util.hpp"
 #include "crash_test.hpp"
+#include "version.hpp"
 
 #include <string>
 #include <vector>
@@ -99,6 +100,10 @@ struct WorkflowConfig
     // gets the full prompt — never restore the old clip too soon.
     // Set true only if clipboard paste is blocked; unicode maps \n → Enter.
     bool pasteTextViaUnicode = false;
+
+    // Chrome MV3 companion (native messaging). When connected, prepare+paste via DOM.
+    // Falls back to UIA/title path if the extension host is not connected.
+    bool preferExtension = true;
 };
 
 struct AppConfig
@@ -120,6 +125,8 @@ struct AppConfig
 
     std::wstring configPath; // resolved ini path
     std::wstring configDir;  // directory containing ini + prompts/
+    std::wstring dataDir;    // %LOCALAPPDATA%\QiuckPrompts
+    std::wstring extensionId = QP_EXTENSION_ID_W;
     std::vector<HotkeyBinding> bindings;
 };
 
@@ -136,7 +143,8 @@ inline HotkeySpec HK(UINT modifiers, UINT vk)
 void GetBuiltinBindings(std::vector<HotkeyBinding>& out);
 
 // Load ini + prompt files. Returns false on hard error (missing required keys).
-// If path empty, tries <exe>/config/qiuckprompts.ini then <exe>/qiuckprompts.ini.
+// If path empty: ensure %LOCALAPPDATA%\QiuckPrompts\qiuckprompts.ini (seed from
+// install template / migrate exe-adjacent), then load it.
 bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstring* error = nullptr);
 
 bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* error = nullptr);
