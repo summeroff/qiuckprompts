@@ -7,8 +7,10 @@
 #include <winhttp.h>
 #include <shellapi.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cwctype>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -79,9 +81,52 @@ bool ParseUrl(const std::wstring& url, std::wstring& host, std::wstring& path, I
     return !host.empty();
 }
 
-bool HttpGetBytes(const std::wstring& url, std::string& out, std::wstring* error)
+// Reject path traversal / separators from remote FileName fields.
+std::wstring SafePackageFileName(const std::wstring& name)
 {
-    out.clear();
+    std::wstring base = FileNameOf(name);
+    std::wstring out;
+    out.reserve(base.size());
+    for (wchar_t c : base)
+    {
+        if (c == L'\\' || c == L'/' || c == L':' || c == L'\0')
+            continue;
+        out.push_back(c);
+    }
+    if (out.empty() || out == L"." || out == L"..")
+        return {};
+    // Require a .nupkg leaf (case-insensitive).
+    if (out.size() < 6)
+        return {};
+    const std::wstring tail = out.substr(out.size() - 6);
+    std::wstring tailLower = tail;
+    for (auto& ch : tailLower)
+        ch = static_cast<wchar_t>(towlower(ch));
+    if (tailLower != L".nupkg")
+        return {};
+    return out;
+}
+
+struct HttpSession
+{
+    HINTERNET session = nullptr;
+    HINTERNET conn = nullptr;
+    HINTERNET req = nullptr;
+
+    ~HttpSession()
+    {
+        if (req)
+            WinHttpCloseHandle(req);
+        if (conn)
+            WinHttpCloseHandle(conn);
+        if (session)
+            WinHttpCloseHandle(session);
+    }
+};
+
+// Open GET request. Requires HTTPS (update packages must not ride plain HTTP).
+bool HttpOpenGet(const std::wstring& url, HttpSession& hs, std::wstring* error)
+{
     std::wstring host, path;
     INTERNET_PORT port = 0;
     bool https = false;
@@ -91,63 +136,62 @@ bool HttpGetBytes(const std::wstring& url, std::string& out, std::wstring* error
             *error = L"bad URL: " + url;
         return false;
     }
+    if (!https)
+    {
+        if (error)
+            *error = L"update feed must use HTTPS: " + url;
+        return false;
+    }
 
-    HINTERNET session = WinHttpOpen(L"QiuckPrompts-Updater/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session)
+    hs.session = WinHttpOpen(L"QiuckPrompts-Updater/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hs.session)
     {
         if (error)
             *error = L"WinHttpOpen failed: " + LastErrorMessage();
         return false;
     }
 
-    HINTERNET conn = WinHttpConnect(
-        session, host.c_str(),
-        port ? port : (https ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT), 0);
-    if (!conn)
+    hs.conn =
+        WinHttpConnect(hs.session, host.c_str(), port ? port : INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!hs.conn)
     {
         if (error)
             *error = L"WinHttpConnect failed: " + LastErrorMessage();
-        WinHttpCloseHandle(session);
         return false;
     }
 
-    DWORD flags = https ? WINHTTP_FLAG_SECURE : 0;
-    HINTERNET req = WinHttpOpenRequest(conn, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
-                                       WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!req)
+    hs.req = WinHttpOpenRequest(hs.conn, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
+                                WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (!hs.req)
     {
         if (error)
             *error = L"WinHttpOpenRequest failed: " + LastErrorMessage();
-        WinHttpCloseHandle(conn);
-        WinHttpCloseHandle(session);
         return false;
     }
 
-    // Follow redirects (GitHub latest/download → tag asset)
     DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-    WinHttpSetOption(req, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect));
+    WinHttpSetOption(hs.req, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect));
 
-    BOOL ok =
-        WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
-    if (ok)
-        ok = WinHttpReceiveResponse(req, nullptr);
-
-    if (!ok)
+    if (!WinHttpSendRequest(hs.req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0,
+                            0) ||
+        !WinHttpReceiveResponse(hs.req, nullptr))
     {
         if (error)
             *error = L"HTTP request failed: " + LastErrorMessage();
-        WinHttpCloseHandle(req);
-        WinHttpCloseHandle(conn);
-        WinHttpCloseHandle(session);
         return false;
     }
 
     DWORD status = 0;
     DWORD statusSize = sizeof(status);
-    WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                        WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize,
-                        WINHTTP_NO_HEADER_INDEX);
+    if (!WinHttpQueryHeaders(hs.req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                             WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize,
+                             WINHTTP_NO_HEADER_INDEX))
+    {
+        if (error)
+            *error = L"WinHttpQueryHeaders failed: " + LastErrorMessage();
+        return false;
+    }
     if (status < 200 || status >= 300)
     {
         if (error)
@@ -156,52 +200,64 @@ bool HttpGetBytes(const std::wstring& url, std::string& out, std::wstring* error
             swprintf(buf, 64, L"HTTP status %lu", status);
             *error = buf;
         }
-        WinHttpCloseHandle(req);
-        WinHttpCloseHandle(conn);
-        WinHttpCloseHandle(session);
         return false;
     }
+    return true;
+}
+
+bool HttpGetBytes(const std::wstring& url, std::string& out, std::wstring* error)
+{
+    out.clear();
+    HttpSession hs;
+    if (!HttpOpenGet(url, hs, error))
+        return false;
 
     for (;;)
     {
         DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(req, &avail))
-            break;
+        if (!WinHttpQueryDataAvailable(hs.req, &avail))
+        {
+            if (error)
+                *error = L"WinHttpQueryDataAvailable failed: " + LastErrorMessage();
+            return false;
+        }
         if (avail == 0)
             break;
         std::string chunk(avail, '\0');
         DWORD read = 0;
-        if (!WinHttpReadData(req, chunk.data(), avail, &read) || read == 0)
+        if (!WinHttpReadData(hs.req, chunk.data(), avail, &read))
+        {
+            if (error)
+                *error = L"WinHttpReadData failed: " + LastErrorMessage();
+            return false;
+        }
+        if (read == 0)
             break;
         chunk.resize(read);
         out.append(chunk);
-        if (out.size() > 256ull * 1024 * 1024) // 256 MiB safety
+        if (out.size() > 16ull * 1024 * 1024) // JSON feeds should be tiny
         {
             if (error)
-                *error = L"download too large";
-            WinHttpCloseHandle(req);
-            WinHttpCloseHandle(conn);
-            WinHttpCloseHandle(session);
+                *error = L"response too large";
             return false;
         }
     }
-
-    WinHttpCloseHandle(req);
-    WinHttpCloseHandle(conn);
-    WinHttpCloseHandle(session);
     return true;
 }
 
+// Stream package bytes straight to disk (avoid buffering whole nupkg in RAM).
 bool HttpDownloadFile(const std::wstring& url, const std::wstring& destPath, std::wstring* error)
 {
-    std::string bytes;
-    if (!HttpGetBytes(url, bytes, error))
+    HttpSession hs;
+    if (!HttpOpenGet(url, hs, error))
         return false;
+
     {
         const size_t slash = destPath.find_last_of(L"\\/");
         if (slash != std::wstring::npos)
             EnsureDirectory(destPath.substr(0, slash));
     }
+
     HANDLE f = CreateFileW(destPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
                            FILE_ATTRIBUTE_NORMAL, nullptr);
     if (f == INVALID_HANDLE_VALUE)
@@ -210,13 +266,60 @@ bool HttpDownloadFile(const std::wstring& url, const std::wstring& destPath, std
             *error = L"cannot write package: " + LastErrorMessage();
         return false;
     }
-    DWORD written = 0;
-    const BOOL ok = WriteFile(f, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr);
-    CloseHandle(f);
-    if (!ok || written != bytes.size())
+
+    std::uint64_t total = 0;
+    bool ok = true;
+    for (;;)
     {
+        DWORD avail = 0;
+        if (!WinHttpQueryDataAvailable(hs.req, &avail))
+        {
+            if (error)
+                *error = L"WinHttpQueryDataAvailable failed: " + LastErrorMessage();
+            ok = false;
+            break;
+        }
+        if (avail == 0)
+            break;
+        std::vector<char> buf(avail);
+        DWORD read = 0;
+        if (!WinHttpReadData(hs.req, buf.data(), avail, &read))
+        {
+            if (error)
+                *error = L"WinHttpReadData failed: " + LastErrorMessage();
+            ok = false;
+            break;
+        }
+        if (read == 0)
+            break;
+        DWORD written = 0;
+        if (!WriteFile(f, buf.data(), read, &written, nullptr) || written != read)
+        {
+            if (error)
+                *error = L"short write downloading package";
+            ok = false;
+            break;
+        }
+        total += written;
+        if (total > 512ull * 1024 * 1024) // 512 MiB safety
+        {
+            if (error)
+                *error = L"download too large";
+            ok = false;
+            break;
+        }
+    }
+    CloseHandle(f);
+    if (!ok)
+    {
+        DeleteFileW(destPath.c_str());
+        return false;
+    }
+    if (total == 0)
+    {
+        DeleteFileW(destPath.c_str());
         if (error)
-            *error = L"short write downloading package";
+            *error = L"empty download";
         return false;
     }
     return true;
@@ -397,7 +500,16 @@ bool CheckForUpdates(const std::wstring& feedUrl, UpdateCheckResult& out, std::w
     file = TrimAscii(file);
 
     out.remoteVersion = Utf8ToWide(ver);
-    out.packageFileName = Utf8ToWide(file);
+    out.packageFileName = SafePackageFileName(Utf8ToWide(file));
+    if (out.packageFileName.empty())
+    {
+        out.ok = false;
+        out.detail = L"invalid package FileName in releases.win.json";
+        if (error)
+            *error = out.detail;
+        return false;
+    }
+    // URL uses the remote basename only (already sanitized) under the feed directory.
     out.packageUrl = JoinUrl(feed, out.packageFileName);
     out.ok = true;
 

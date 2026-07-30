@@ -713,14 +713,21 @@ int App::RunSelfTest()
 
     expect(!DefaultUpdateFeedUrl().empty(), L"DefaultUpdateFeedUrl");
     {
-        UpdateCheckResult ur;
-        // Dev layout: typically not Velopack-installed; check should still succeed.
-        expect(CheckForUpdates(L"", ur, nullptr), L"CheckForUpdates callable");
-        expect(ur.ok, L"CheckForUpdates ok");
-        if (!ur.installed)
+        // Offline-safe: do not hit the network during --self-test.
+        // When not Velopack-installed, CheckForUpdates returns early without HTTP.
+        // When installed, only exercise FindUpdateExe / IsVelopackInstalled.
+        if (!IsVelopackInstalled())
+        {
+            UpdateCheckResult ur;
+            expect(CheckForUpdates(L"", ur, nullptr), L"CheckForUpdates callable");
+            expect(ur.ok, L"CheckForUpdates ok");
+            expect(!ur.installed, L"CheckForUpdates not installed");
             wprintf(L"[ OK ] updater: not Velopack-installed (expected for dev)\n");
-        else
-            wprintf(L"[ OK ] updater: Velopack-installed remote=%s\n", ur.remoteVersion.c_str());
+        } else
+        {
+            expect(!FindUpdateExe().empty(), L"FindUpdateExe when installed");
+            wprintf(L"[ OK ] updater: Velopack-installed (skipped network check in self-test)\n");
+        }
     }
 
     wprintf(L"\n%d failure(s)\n", failures);
