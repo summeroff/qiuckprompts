@@ -127,6 +127,8 @@ struct AppConfig
     std::wstring configDir;  // directory containing ini + prompts/
     std::wstring dataDir;    // %LOCALAPPDATA%\QiuckPrompts
     std::wstring extensionId = QP_EXTENSION_ID_W;
+    // Velopack feed base URL (directory with releases.win.json + nupkg). Empty → default GitHub.
+    std::wstring updateUrl;
     std::vector<HotkeyBinding> bindings;
 };
 

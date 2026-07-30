@@ -25,6 +25,7 @@ public:
         IdOpenTitlesLog = 1007,
         IdOpenDataDir = 1008,
         IdOpenConfig = 1009,
+        IdCheckUpdates = 1010,
     };
 
     TrayIcon() = default;

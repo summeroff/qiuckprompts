@@ -122,6 +122,7 @@ void TrayIcon::ShowContextMenu()
     AppendMenuW(menu, MF_STRING, IdOpenLog, L"Open log file");
     AppendMenuW(menu, MF_STRING, IdOpenConfig, L"Open config");
     AppendMenuW(menu, MF_STRING, IdOpenDataDir, L"Open data folder");
+    AppendMenuW(menu, MF_STRING, IdCheckUpdates, L"Check for updates…");
     AppendMenuW(menu, MF_STRING, IdAbout, L"About");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, IdExit, L"Exit");

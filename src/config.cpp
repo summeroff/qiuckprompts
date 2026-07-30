@@ -449,6 +449,8 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
             cfg.workflow.preferExtension = get(L"prefer_extension") != L"0";
         if (!get(L"extension_id").empty())
             cfg.extensionId = Trim(get(L"extension_id"));
+        if (!get(L"update_url").empty())
+            cfg.updateUrl = Trim(get(L"update_url"));
     }
 
     cfg.bindings.clear();
@@ -679,6 +681,11 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         if (TakeEqValue(i, argc, argv, arg, L"--hotkey-release-poll", v))
         {
             cfg.hotkeyReleasePollMs = ClampInt(_wtoi(v.c_str()), 5, 100);
+            continue;
+        }
+        if (TakeEqValue(i, argc, argv, arg, L"--update-url", v))
+        {
+            cfg.updateUrl = v;
             continue;
         }
 

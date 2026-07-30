@@ -150,11 +150,12 @@ Details: [extension/README.md](extension/README.md). Disable with `prefer_extens
 ## Releases
 
 This project ships installable binaries via
-[GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
+[GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases)
+using **Velopack** (Setup + in-app updates) and a plain zip.
 
 CI builds on every push/PR as **`0.0.0-dev`**. **Pushing a version tag** injects that
-version into the binary (CMake `-DQP_RELEASE_VERSION=`), builds RelWithDebInfo, and
-publishes a Release with a Windows x64 zip:
+version into the binary (CMake `-DQP_RELEASE_VERSION=`), builds RelWithDebInfo, runs
+`vpk pack`, and publishes a Release:
 
 ```bat
 git checkout master
@@ -166,12 +167,32 @@ git push origin v0.3.2
 | Item | Detail |
 |------|--------|
 | Trigger | Git tag matching `v*` |
-| Version | Tag without `v` → PE + About + FileVersion strings |
+| Version | Tag without `v` → PE + About + Velopack pack version |
 | Local/PR | Always `0.0.0-dev` (not a release) |
 | Build | `RelWithDebInfo` (MSVC x64) |
-| Asset | `qiuckprompts-<tag>-win-x64.zip` |
-| Contents | `qiuckprompts.exe`, PDB, README, LICENSE, config |
+| Installer | `QiuckPrompts-win-Setup.exe` (Velopack one-click → `%LocalAppData%\QiuckPrompts`) |
+| Portable | `QiuckPrompts-win-Portable.zip` (Velopack portable layout) |
+| Feed | `releases.win.json` + `*-full.nupkg` (in-app update) |
+| Zip | `qiuckprompts-<tag>-win-x64.zip` (raw exe + config + extension) |
 | Notes | Auto-generated from commits since previous tag |
+
+### Install / update
+
+1. Download **QiuckPrompts-win-Setup.exe** and run (no admin).
+2. Config/logs stay in `%LOCALAPPDATA%\QiuckPrompts\` (not wiped by updates).
+3. Tray → **Check for updates…** fetches the latest feed and applies via `Update.exe`.
+
+Local pack (needs [vpk](https://www.nuget.org/packages/vpk)):
+
+```bat
+dotnet tool install -g vpk
+scripts\build.bat
+cmake --build build --config RelWithDebInfo
+scripts\pack-velopack.bat 0.3.2
+```
+
+Default feed URL: `https://github.com/summeroff/qiuckprompts/releases/latest/download`  
+Override: `update_url=` in ini or `--update-url=`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for branch/PR workflow and release checklist.
 
