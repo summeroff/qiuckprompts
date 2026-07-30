@@ -3,6 +3,8 @@
 #include "util.hpp"
 #include "version.hpp"
 
+#include <sddl.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -18,6 +20,34 @@ namespace
 
 constexpr DWORD kPipeBuffer = 1 << 20; // 1 MiB — prompts can be large
 constexpr DWORD kConnectWaitMs = 500;
+
+// Restrict named pipe to the creating user + SYSTEM (not world-writable).
+struct PipeSecurity
+{
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    SECURITY_ATTRIBUTES sa{};
+
+    PipeSecurity()
+    {
+        // OW = owner, SY = Local System. No Authenticated Users / Everyone.
+        if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;GA;;;OW)(A;;GA;;;SY)",
+                                                                 SDDL_REVISION_1, &sd, nullptr) &&
+            sd)
+        {
+            sa.nLength = sizeof(sa);
+            sa.lpSecurityDescriptor = sd;
+            sa.bInheritHandle = FALSE;
+        }
+    }
+
+    ~PipeSecurity()
+    {
+        if (sd)
+            LocalFree(sd);
+    }
+
+    SECURITY_ATTRIBUTES* Attrs() { return sd ? &sa : nullptr; }
+};
 
 bool ReadExact(HANDLE h, void* buf, DWORD n, DWORD timeoutMs)
 {
@@ -347,13 +377,13 @@ void ExtBridge::Stop()
     if (dummy != INVALID_HANDLE_VALUE)
         CloseHandle(dummy);
 
+    // Cancel pending I/O only — ServerLoop owns CloseHandle on its local pipe HANDLE
+    // (avoids double-close / use-after-close races).
     {
         std::lock_guard<std::mutex> lock(ioMutex_);
         if (pipe_ != INVALID_HANDLE_VALUE)
         {
             CancelIoEx(pipe_, nullptr);
-            CloseHandle(pipe_);
-            pipe_ = INVALID_HANDLE_VALUE;
         }
     }
 
@@ -369,6 +399,10 @@ void ExtBridge::Stop()
         stopEvent_ = nullptr;
     }
     clientConnected_ = false;
+    {
+        std::lock_guard<std::mutex> lock(ioMutex_);
+        pipe_ = INVALID_HANDLE_VALUE;
+    }
     QP_LOG_INFO(L"ext_bridge: stopped");
 }
 
@@ -380,11 +414,12 @@ DWORD WINAPI ExtBridge::ServerThreadMain(void* self)
 
 void ExtBridge::ServerLoop()
 {
+    PipeSecurity pipeSec;
     while (running_.load())
     {
         HANDLE pipe = CreateNamedPipeW(QP_EXT_BRIDGE_PIPE_W, PIPE_ACCESS_DUPLEX,
                                        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1,
-                                       kPipeBuffer, kPipeBuffer, kConnectWaitMs, nullptr);
+                                       kPipeBuffer, kPipeBuffer, kConnectWaitMs, pipeSec.Attrs());
         if (pipe == INVALID_HANDLE_VALUE)
         {
             QP_LOG_ERROR(L"ext_bridge: CreateNamedPipe failed: %s", LastErrorMessage().c_str());

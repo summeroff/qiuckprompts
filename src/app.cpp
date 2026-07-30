@@ -461,7 +461,22 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         }
     }
 
+    // CLI --no-extension wins over ini prefer_extension= (LoadConfigFile runs after argv parse).
+    if (argv)
+    {
+        for (int i = 1; i < argc; ++i)
+        {
+            if (argv[i] && wcscmp(argv[i], L"--no-extension") == 0)
+            {
+                cfg_.workflow.preferExtension = false;
+                break;
+            }
+        }
+    }
+
     // Native messaging host registration + pipe server for MV3 companion.
+    // Skip entirely when extension support is disabled (--no-extension / prefer_extension=0).
+    if (cfg_.workflow.preferExtension)
     {
         std::wstring nmErr;
         if (!EnsureNativeMessagingRegistration(cfg_.extensionId, &nmErr))
@@ -473,6 +488,9 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         {
             QP_LOG_WARN(L"ext_bridge start failed: %s", brErr.c_str());
         }
+    } else
+    {
+        QP_LOG_INFO(L"extension support disabled — skip NM registration and pipe server");
     }
 
     // Baseline snapshot at startup (whatever browsers are already open).

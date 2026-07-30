@@ -298,38 +298,43 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
         return false;
     }
 
-    // Empty / unreadable user file → try newest backup once.
+    // Empty user file → try newest backup once. Never write when reading install template
+    // or an explicit --config path outside AppData.
     {
-        WIN32_FILE_ATTRIBUTE_DATA fad{};
-        if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fad))
+        const std::wstring userCfg = GetUserConfigPath();
+        if (path == userCfg)
         {
-            ULARGE_INTEGER uli{};
-            uli.HighPart = fad.nFileSizeHigh;
-            uli.LowPart = fad.nFileSizeLow;
-            if (uli.QuadPart == 0)
+            WIN32_FILE_ATTRIBUTE_DATA fad{};
+            if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fad))
             {
-                const std::wstring backups = GetUserBackupsDir(false);
-                // pick newest qiuckprompts-*.ini by name
-                WIN32_FIND_DATAW fd{};
-                HANDLE h = FindFirstFileW(PathJoin(backups, L"qiuckprompts-*.ini").c_str(), &fd);
-                std::wstring best;
-                if (h != INVALID_HANDLE_VALUE)
+                ULARGE_INTEGER uli{};
+                uli.HighPart = fad.nFileSizeHigh;
+                uli.LowPart = fad.nFileSizeLow;
+                if (uli.QuadPart == 0)
                 {
-                    do
+                    const std::wstring backups = GetUserBackupsDir(false);
+                    WIN32_FIND_DATAW fd{};
+                    HANDLE h =
+                        FindFirstFileW(PathJoin(backups, L"qiuckprompts-*.ini").c_str(), &fd);
+                    std::wstring best;
+                    if (h != INVALID_HANDLE_VALUE)
                     {
-                        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-                            continue;
-                        if (best.empty() || fd.cFileName > best)
-                            best = fd.cFileName;
-                    } while (FindNextFileW(h, &fd));
-                    FindClose(h);
-                }
-                if (!best.empty())
-                {
-                    const std::wstring bp = PathJoin(backups, best);
-                    QP_LOG_WARN(L"config: user ini empty — restoring backup %s", bp.c_str());
-                    BackupFileToUserBackups(path); // keep the empty one too
-                    CopyFilePath(bp, path, false);
+                        do
+                        {
+                            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                                continue;
+                            if (best.empty() || fd.cFileName > best)
+                                best = fd.cFileName;
+                        } while (FindNextFileW(h, &fd));
+                        FindClose(h);
+                    }
+                    if (!best.empty())
+                    {
+                        const std::wstring bp = PathJoin(backups, best);
+                        QP_LOG_WARN(L"config: user ini empty — restoring backup %s", bp.c_str());
+                        BackupFileToUserBackups(path); // keep the empty one too
+                        CopyFilePath(bp, path, false);
+                    }
                 }
             }
         }

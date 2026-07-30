@@ -72,7 +72,7 @@ std::wstring GetUserConfigPath()
 
 std::wstring GetUserLogsDir(bool ensure)
 {
-    const std::wstring dir = PathJoin(GetAppDataDir(true), L"logs");
+    const std::wstring dir = PathJoin(GetAppDataDir(ensure), L"logs");
     if (ensure)
         EnsureDirectory(dir);
     return dir;
@@ -80,7 +80,7 @@ std::wstring GetUserLogsDir(bool ensure)
 
 std::wstring GetUserBackupsDir(bool ensure)
 {
-    const std::wstring dir = PathJoin(GetAppDataDir(true), L"backups");
+    const std::wstring dir = PathJoin(GetAppDataDir(ensure), L"backups");
     if (ensure)
         EnsureDirectory(dir);
     return dir;
@@ -270,9 +270,10 @@ bool EnsureUserConfigFile(std::wstring* resolvedPath, std::wstring* error)
         return true;
     }
 
-    // Prefer migrate customized next-to-exe configs; install template is last resort.
+    // Prefer a customized loose next-to-exe ini (legacy portable), then the install
+    // template under <exe>\config\ (POST_BUILD / package layout). Do not list the
+    // template path twice.
     const std::wstring candidates[] = {
-        PathJoin({GetExeDir(), L"config", L"qiuckprompts.ini"}),
         PathJoin(GetExeDir(), L"qiuckprompts.ini"),
         GetInstallConfigTemplatePath(),
     };

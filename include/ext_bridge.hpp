@@ -24,7 +24,8 @@ public:
     void Stop();
 
     bool IsClientConnected() const;
-    // True if a client is connected and answered ping recently (or never pinged yet but connected).
+    // True while a native-messaging host client holds the named-pipe connection.
+    // (Does not require a successful ping — connection alone is enough to attempt Call.)
     bool IsExtensionReady() const;
 
     // Blocking request/response. requestJson must include "id" (number) or one is injected.

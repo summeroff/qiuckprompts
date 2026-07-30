@@ -54,19 +54,20 @@ async function ensureTab(url) {
     if (!t.url) continue;
     try {
       const u = new URL(t.url);
-      if (u.origin === want.origin) {
-        await chrome.tabs.update(t.id, { active: true, url: t.url.startsWith(want.origin) ? undefined : url });
-        if (t.windowId != null) {
-          try {
-            await chrome.windows.update(t.windowId, { focused: true });
-          } catch { /* ignore */ }
-        }
-        // If we only focused, still navigate if path is a different AI entry.
-        if (!t.url.startsWith(want.origin)) {
-          await chrome.tabs.update(t.id, { url });
-        }
-        return t.id;
+      if (u.origin !== want.origin) continue;
+
+      // Focus an existing tab on this origin.
+      await chrome.tabs.update(t.id, { active: true });
+      if (t.windowId != null) {
+        try {
+          await chrome.windows.update(t.windowId, { focused: true });
+        } catch { /* ignore */ }
       }
+      // Navigate only when path/query differ from the requested entry URL.
+      if (u.pathname !== want.pathname || u.search !== want.search || u.hash !== want.hash) {
+        await chrome.tabs.update(t.id, { url });
+      }
+      return t.id;
     } catch { /* ignore bad urls */ }
   }
   const created = await chrome.tabs.create({ url, active: true });
