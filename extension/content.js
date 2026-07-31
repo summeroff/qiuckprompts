@@ -122,12 +122,14 @@ function boot() {
         const el = findComposer();
         if (el) {
           const key = composerKey(el);
+          // Always refresh lastEl so we never return a detached node if SPA
+          // replaced the element with one that shares the same key.
+          lastEl = el;
           if (key && key === lastKey) {
             streak += 1;
           } else {
             lastKey = key;
             streak = 1;
-            lastEl = el;
           }
           if (streak >= needStable) {
             resolve(lastEl);

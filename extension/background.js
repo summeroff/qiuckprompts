@@ -57,9 +57,14 @@ function sleep(ms) {
 function waitTabComplete(tabId, timeoutMs = 25000) {
   return new Promise((resolve) => {
     let settled = false;
+    let timer = null;
     const finish = (ok) => {
       if (settled) return;
       settled = true;
+      if (timer != null) {
+        clearTimeout(timer);
+        timer = null;
+      }
       try {
         chrome.tabs.onUpdated.removeListener(onUpdated);
       } catch {
@@ -79,7 +84,7 @@ function waitTabComplete(tabId, timeoutMs = 25000) {
       .catch(() => {
         /* keep waiting */
       });
-    setTimeout(() => finish(false), timeoutMs);
+    timer = setTimeout(() => finish(false), timeoutMs);
   });
 }
 
