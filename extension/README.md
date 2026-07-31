@@ -16,7 +16,9 @@ via **native messaging**. No AI API keys — it drives pages you already use.
    `%LOCALAPPDATA%\QiuckPrompts\extension`  
    (not `current\extension` — that path is replaced on every app update)
 5. Confirm extension id is **`aodehlngahndannepofbddnacfaldmih`**
-6. Start the tray app. After **app updates**, open `chrome://extensions` and click
+6. Companion version should match the app major (e.g. **1.0.0**). After updates, click
+   **Reload** on the extension if the version or paste path looks stale.
+7. Start the tray app. After **app updates**, open `chrome://extensions` and click
    **Reload** on QiuckPrompts if paste stops working (files change under the same path).
 
 ### Dev / portable (repo build)

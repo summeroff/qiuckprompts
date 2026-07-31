@@ -124,6 +124,7 @@ set(QP_SOURCES
     src/crash_test.cpp
     src/ext_bridge.cpp
     src/updater.cpp
+    src/autostart.cpp
     resources/app.rc
 )
 
@@ -146,6 +147,7 @@ set(QP_HEADERS
     include/crash_test.hpp
     include/ext_bridge.hpp
     include/updater.hpp
+    include/autostart.hpp
     resources/resource.h
 )
 
