@@ -13,7 +13,9 @@ function connectNative() {
   if (port) {
     try {
       port.disconnect();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     port = null;
   }
   try {
@@ -47,6 +49,44 @@ function reply(msg, extra) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Wait until tab reports status=complete (SPA still may hydrate after). */
+function waitTabComplete(tabId, timeoutMs = 25000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      try {
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+      } catch {
+        /* ignore */
+      }
+      resolve(ok);
+    };
+    const onUpdated = (id, info) => {
+      if (id === tabId && info.status === 'complete') finish(true);
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs
+      .get(tabId)
+      .then((t) => {
+        if (t && t.status === 'complete') finish(true);
+      })
+      .catch(() => {
+        /* keep waiting */
+      });
+    setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
+/**
+ * Focus or open a tab for url.
+ * Returns { tabId, cold } where cold=true if we created a tab or navigated.
+ */
 async function ensureTab(url) {
   const tabs = await chrome.tabs.query({});
   const want = new URL(url);
@@ -56,29 +96,31 @@ async function ensureTab(url) {
       const u = new URL(t.url);
       if (u.origin !== want.origin) continue;
 
-      // Focus an existing tab on this origin.
       await chrome.tabs.update(t.id, { active: true });
       if (t.windowId != null) {
         try {
           await chrome.windows.update(t.windowId, { focused: true });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
-      // Navigate only when path/query differ from the requested entry URL.
+      let cold = false;
       if (u.pathname !== want.pathname || u.search !== want.search || u.hash !== want.hash) {
         await chrome.tabs.update(t.id, { url });
+        cold = true;
+        await waitTabComplete(t.id);
       }
-      return t.id;
-    } catch { /* ignore bad urls */ }
+      return { tabId: t.id, cold };
+    } catch {
+      /* ignore bad urls */
+    }
   }
   const created = await chrome.tabs.create({ url, active: true });
-  return created.id;
+  await waitTabComplete(created.id);
+  return { tabId: created.id, cold: true };
 }
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function sendToTab(tabId, message, attempts = 12) {
+async function sendToTab(tabId, message, attempts = 16) {
   let lastErr = 'no response';
   for (let i = 0; i < attempts; ++i) {
     try {
@@ -86,9 +128,8 @@ async function sendToTab(tabId, message, attempts = 12) {
       if (resp) return resp;
     } catch (e) {
       lastErr = String(e);
-      // Content script may not be injected yet. Inject once into the main frame only
-      // (allFrames + re-inject used to stack multiple onMessage listeners → multi-paste).
-      if (i === 2) {
+      // Content script may not be injected yet (especially right after navigation).
+      if (i === 1 || i === 4 || i === 8) {
         try {
           await chrome.scripting.executeScript({
             target: { tabId, allFrames: false },
@@ -99,7 +140,7 @@ async function sendToTab(tabId, message, attempts = 12) {
         }
       }
     }
-    await sleep(250);
+    await sleep(300);
   }
   return { ok: false, error: lastErr };
 }
@@ -122,19 +163,25 @@ async function onNativeMessage(msg) {
         reply(msg, { ok: false, error: 'missing url' });
         return;
       }
-      const tabId = await ensureTab(url);
-      // Give the SPA a moment after navigate/focus.
-      await sleep(400);
+      const { tabId, cold } = await ensureTab(url);
+      // Cold open / navigate: SPA shell is not ready at status=complete.
+      if (cold) {
+        await sleep(900);
+      } else {
+        await sleep(250);
+      }
       const resp = await sendToTab(tabId, {
         cmd: 'waitAndPaste',
         text,
         timeoutMs,
+        cold: !!cold,
       });
       reply(msg, {
         ok: !!(resp && resp.ok),
         detail: (resp && (resp.detail || resp.error)) || '',
         error: resp && resp.ok ? undefined : (resp && resp.error) || 'paste failed',
         href: resp && resp.href,
+        cold: !!cold,
       });
       return;
     }
@@ -142,13 +189,15 @@ async function onNativeMessage(msg) {
     if (msg.cmd === 'prepare') {
       const url = String(msg.url || '');
       const timeoutMs = Math.max(1000, Number(msg.timeoutMs) || 15000);
-      const tabId = await ensureTab(url);
-      await sleep(400);
-      const resp = await sendToTab(tabId, { cmd: 'findComposer', timeoutMs });
+      const { tabId, cold } = await ensureTab(url);
+      if (cold) await sleep(900);
+      else await sleep(250);
+      const resp = await sendToTab(tabId, { cmd: 'findComposer', timeoutMs, cold: !!cold });
       reply(msg, {
         ok: !!(resp && resp.ok),
         detail: (resp && resp.detail) || '',
         error: resp && resp.ok ? undefined : (resp && resp.error) || 'composer not found',
+        cold: !!cold,
       });
       return;
     }
@@ -161,6 +210,5 @@ async function onNativeMessage(msg) {
 
 connectNative();
 
-// Keep alive lightly when Chrome suspends SW — reconnect on startup events.
 chrome.runtime.onStartup.addListener(connectNative);
 chrome.runtime.onInstalled.addListener(connectNative);
