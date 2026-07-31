@@ -173,7 +173,7 @@ bool ParseHotkey(const std::wstring& text, HotkeySpec& out, std::wstring* error)
 }
 
 std::wstring BuildPromptPayload(const std::wstring& promptTemplate, const std::wstring& editorText,
-                                bool fenceEditorText)
+                                bool fenceEditorText, const std::wstring& contextText)
 {
     // Placeholder expansion
     if (promptTemplate.find(L"{{TEXT}}") != std::wstring::npos ||
@@ -189,8 +189,8 @@ std::wstring BuildPromptPayload(const std::wstring& promptTemplate, const std::w
             }
         };
         replaceAll(out, L"{{TEXT}}", editorText);
-        // Leave an empty context block the user can fill in the AI box if needed.
-        replaceAll(out, L"{{CONTEXT}}", L"");
+        // Clipboard snapshot taken before Ctrl+A/C capture (see AiWorkflow::Run).
+        replaceAll(out, L"{{CONTEXT}}", contextText);
         return out;
     }
 
@@ -255,10 +255,14 @@ void GetBuiltinBindings(std::vector<HotkeyBinding>& out)
         L"Deep fact-check with sources for claims in the message.\n", true, false);
     add(L'L', L"idea_grok", L"Idea collab (Grok)", L"grok", L"https://grok.com/", L"Grok",
         L"Collaborate on this idea. Push back and suggest next steps.\n", true, false);
-    add(L'O', L"grammar_context_meta", L"Grammar in context (Meta)", L"meta",
-        L"https://www.meta.ai/", L"Meta",
-        L"Polish MY message only. Do not over-explain context readers already see.\n\n"
-        L"My message:\n```\n{{TEXT}}\n```\n\nOptional context:\n```\n{{CONTEXT}}\n```\n",
+    add(L'O', L"grammar_context_gemini", L"Grammar in context (Gemini)", L"gemini",
+        L"https://gemini.google.com/app", L"Gemini",
+        L"I am posting the message below in an existing thread/context.\n"
+        L"Polish MY message only (grammar, spelling, awkward wording). Keep my voice. Minimal "
+        L"edits.\n"
+        L"Use the optional context block only as background — do not restate it.\n\n"
+        L"My message:\n```\n{{TEXT}}\n```\n\n"
+        L"Context (clipboard before capture; may be empty):\n```\n{{CONTEXT}}\n```\n",
         true, false);
     add(L'I', L"screenshot_meta", L"Screenshot review (Meta)", L"meta", L"https://www.meta.ai/",
         L"Meta",
