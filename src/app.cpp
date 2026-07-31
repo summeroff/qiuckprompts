@@ -679,6 +679,13 @@ int App::RunSelfTest()
         const std::wstring p2 = BuildPromptPayload(L"X {{TEXT}} Y", L"ZZ", true);
         expect(p2.find(L"ZZ") != std::wstring::npos && p2.find(L"{{TEXT}}") == std::wstring::npos,
                L"BuildPromptPayload {{TEXT}}");
+        const std::wstring p3 =
+            BuildPromptPayload(L"T={{TEXT}} C={{CONTEXT}}", L"body", true, L"ctx");
+        expect(p3.find(L"body") != std::wstring::npos && p3.find(L"ctx") != std::wstring::npos &&
+                   p3.find(L"{{TEXT}}") == std::wstring::npos &&
+                   p3.find(L"{{CONTEXT}}") == std::wstring::npos,
+               L"BuildPromptPayload {{CONTEXT}}");
+        wprintf(L"[ OK ] BuildPromptPayload\n");
     }
     expect(ClipboardHasImage() == ClipboardHasImage(), L"ClipboardHasImage callable");
 

@@ -157,7 +157,9 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
 bool ParseHotkey(const std::wstring& text, HotkeySpec& out, std::wstring* error = nullptr);
 
 // Expand {{TEXT}} / {{CONTEXT}} or fence-append editor body.
+// contextText fills {{CONTEXT}} (typically clipboard contents at hotkey time,
+// before editor capture overwrites the clipboard).
 std::wstring BuildPromptPayload(const std::wstring& promptTemplate, const std::wstring& editorText,
-                                bool fenceEditorText);
+                                bool fenceEditorText, const std::wstring& contextText = L"");
 
 } // namespace qp
