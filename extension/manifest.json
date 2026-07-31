@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "QiuckPrompts Companion",
-  "version": "1.0.1",
-  "description": "DOM paste/ready helper for QiuckPrompts 1.0 (native messaging).",
+  "version": "1.0.2",
+  "description": "DOM paste/ready helper for QiuckPrompts (version stamped to app PE on build/pack).",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9SlS2cKF57nHLdIf6BadZi2NHc4T6AtCoH2ZqhBpt7EvKjKLNbo9rqE7c9jJ1OqsmVJhLQclTVzkdt+egygkSi6PeUx5IFE1RxLYtqVIhMyU/hUIGypZBm1AFUmUkfIrcos9a9qAJoV2KIgHBZRtbpYCbpTEhjoNOLrN4tmPtMk+BnMqCsLfNeEwKcx2ZTQRIoO6HKAMeJrZ3meoNW0zT3wuTxnUzWx8ptjsLIPMFQmeGtAlgQCCy9PM3gB5/bn3YK/+GXScrXFa/6jTGd1S64kt248M5QUaRZB0rmOkYS9zhkt2p6oT1ntyxr5Ut2naFkV2OepFvNU5SoYMg7c+XwIDAQAB",
   "permissions": [
     "nativeMessaging",

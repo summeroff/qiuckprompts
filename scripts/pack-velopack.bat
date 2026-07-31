@@ -54,6 +54,15 @@ if exist "%OUT%\extension" xcopy /e /i /y "%OUT%\extension" "%PACKDIR%\extension
 if exist "README.md" copy /y "README.md" "%PACKDIR%\" >nul
 if exist "LICENSE" copy /y "LICENSE" "%PACKDIR%\" >nul
 
+REM Lockstep companion version with pack version (Chrome-safe X.Y.Z only).
+if exist "%PACKDIR%\extension\manifest.json" (
+  cmake -DQP_EXT_DIR=%PACKDIR%\extension -DQP_EXT_VERSION=%VER% -P "%~dp0..\cmake\stamp_extension_version.cmake"
+  if errorlevel 1 (
+    echo Failed to stamp extension version to %VER%
+    exit /b 1
+  )
+)
+
 if not exist "%RELDIR%" mkdir "%RELDIR%"
 
 vpk pack ^

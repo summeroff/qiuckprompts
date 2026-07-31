@@ -182,6 +182,8 @@ target_link_libraries(qiuckprompts PRIVATE
 )
 
 # Portable layout next to the exe (install template + unpacked extension for dev)
+# Companion manifest version is stamped to PE X.Y.Z so Chrome matches the app.
+set(QP_EXT_PE_VERSION "${QP_VERSION_MAJOR}.${QP_VERSION_MINOR}.${QP_VERSION_PATCH}")
 add_custom_command(TARGET qiuckprompts POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E remove_directory
         "$<TARGET_FILE_DIR:qiuckprompts>/config"
@@ -193,7 +195,11 @@ add_custom_command(TARGET qiuckprompts POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/extension"
         "$<TARGET_FILE_DIR:qiuckprompts>/extension"
-    COMMENT "Copy config/ + extension/ beside executable"
+    COMMAND ${CMAKE_COMMAND}
+        -DQP_EXT_DIR=$<TARGET_FILE_DIR:qiuckprompts>/extension
+        -DQP_EXT_VERSION=${QP_EXT_PE_VERSION}
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/stamp_extension_version.cmake"
+    COMMENT "Copy config/ + extension/ (stamp companion v${QP_EXT_PE_VERSION})"
 )
 
 enable_testing()
