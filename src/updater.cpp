@@ -773,20 +773,20 @@ bool TryHandleVelopackHook(int argc, wchar_t** argv, int* exitCode)
     try
     {
         if (wcscmp(hook, L"--veloapp-uninstall") == 0)
-                {
-                    std::wstring nmErr;
-                    if (!RemoveNativeMessagingRegistration(&nmErr))
-                        QP_LOG_WARN(L"velopack uninstall: NM cleanup: %s", nmErr.c_str());
-                    else
-                        QP_LOG_INFO(L"velopack uninstall: NM registry cleared");
+        {
+            std::wstring nmErr;
+            if (!RemoveNativeMessagingRegistration(&nmErr))
+                QP_LOG_WARN(L"velopack uninstall: NM cleanup: %s", nmErr.c_str());
+            else
+                QP_LOG_INFO(L"velopack uninstall: NM registry cleared");
 
-                    std::wstring autoErr;
-                    if (!SyncStartWithWindows(false, &autoErr))
-                        QP_LOG_WARN(L"velopack uninstall: autostart cleanup failed: %s", autoErr.c_str());
-                    else
-                        QP_LOG_INFO(L"velopack uninstall: autostart Run key cleared");
-                } else if (wcscmp(hook, L"--veloapp-obsolete") == 0)
-                {
+            std::wstring autoErr;
+            if (!SyncStartWithWindows(false, &autoErr))
+                QP_LOG_WARN(L"velopack uninstall: autostart cleanup failed: %s", autoErr.c_str());
+            else
+                QP_LOG_INFO(L"velopack uninstall: autostart Run key cleared");
+        } else if (wcscmp(hook, L"--veloapp-obsolete") == 0)
+        {
             QP_LOG_INFO(L"velopack obsolete: no-op");
         } else
         {
