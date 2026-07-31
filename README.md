@@ -167,9 +167,9 @@ git push origin v0.3.2
 | Item | Detail |
 |------|--------|
 | Trigger | Git tag matching `v*` |
-| Version | Tag without `v` → PE + About + Velopack pack version |
-| Local/PR | Always `0.0.0-dev` (not a release) |
-| Beta tags | e.g. `v1.0.0-b1` (SemVer pre-release; GitHub **prerelease**) |
+| Version | Tag without `v` → PE + About + Velopack pack version + **Chrome companion** `manifest.json` (`X.Y.Z` only) |
+| Local/PR | Always `0.0.0-dev` (not a release); companion stamped `0.0.0` beside Debug exe |
+| Beta tags | e.g. `v1.0.0-b1` (SemVer pre-release; GitHub **prerelease**; companion stamped `1.0.0`) |
 | Build | `RelWithDebInfo` (MSVC x64) |
 | Installer | `QiuckPrompts-win-Setup.exe` (Velopack one-click → `%LocalAppData%\QiuckPrompts`) |
 | Portable | `QiuckPrompts-win-Portable.zip` (Velopack portable layout) |
@@ -188,9 +188,9 @@ git push origin v0.3.2
 
 | Step | What |
 |------|------|
-| Install/update hook | Registers native messaging host; copies packaged `extension/` → `%LOCALAPPDATA%\QiuckPrompts\extension` (stable path) |
+| Install/update hook | Registers native messaging host; copies packaged `extension/` → `%LOCALAPPDATA%\QiuckPrompts\extension` (stable path). Companion version = app PE `X.Y.Z`. |
 | You once | Chrome → Load unpacked → that **stable** folder (not `current\extension`) |
-| After app update | Extension files are re-copied to the same path — click **Reload** on `chrome://extensions` if needed |
+| After app update | Extension files are re-copied to the same path — click **Reload** on `chrome://extensions` if Chrome still shows the old companion version |
 | Uninstall | NM registry keys removed; your config/logs/extension folder are left |
 
 Local pack (needs [vpk](https://www.nuget.org/packages/vpk)):
