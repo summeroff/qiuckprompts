@@ -29,8 +29,19 @@ if(NOT EXISTS "${_mf}")
 endif()
 
 file(READ "${_mf}" _json)
+if(NOT _json MATCHES "\"version\"[ \t]*:[ \t]*\"[^\"]*\"")
+  message(FATAL_ERROR
+    "stamp_extension_version: no \"version\" field in ${_mf} (format changed?)")
+endif()
+
 string(REGEX REPLACE "\"version\"[ \t]*:[ \t]*\"[^\"]*\""
                      "\"version\": \"${_ver}\""
                      _json "${_json}")
+
+if(NOT _json MATCHES "\"version\"[ \t]*:[ \t]*\"${_ver}\"")
+  message(FATAL_ERROR
+    "stamp_extension_version: failed to set version to '${_ver}' in ${_mf}")
+endif()
+
 file(WRITE "${_mf}" "${_json}")
 message(STATUS "Stamped extension version ${_ver} → ${_mf}")

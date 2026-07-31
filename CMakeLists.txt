@@ -196,8 +196,8 @@ add_custom_command(TARGET qiuckprompts POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/extension"
         "$<TARGET_FILE_DIR:qiuckprompts>/extension"
     COMMAND ${CMAKE_COMMAND}
-        -DQP_EXT_DIR=$<TARGET_FILE_DIR:qiuckprompts>/extension
-        -DQP_EXT_VERSION=${QP_EXT_PE_VERSION}
+        "-DQP_EXT_DIR=$<TARGET_FILE_DIR:qiuckprompts>/extension"
+        "-DQP_EXT_VERSION=${QP_EXT_PE_VERSION}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/stamp_extension_version.cmake"
     COMMENT "Copy config/ + extension/ (stamp companion v${QP_EXT_PE_VERSION})"
 )
