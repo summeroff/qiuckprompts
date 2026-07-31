@@ -164,8 +164,11 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
     // (select context on a page → Ctrl+C → focus draft → hotkey).
     if (!userClipText.empty() && (req.promptBody.find(L"{{CONTEXT}}") != std::wstring::npos))
     {
-        QP_LOG_INFO(L"workflow: context from pre-capture clipboard (%zu wchar) preview='%s'",
-                    userClipText.size(), PayloadPreview(userClipText, 80).c_str());
+        // Length only at INFO — clipboard often holds secrets; no content preview here.
+        QP_LOG_INFO(L"workflow: context from pre-capture clipboard (%zu wchar)",
+                    userClipText.size());
+        QP_LOG_DEBUG(L"workflow: context clipboard preview='%s'",
+                     PayloadPreview(userClipText, 80).c_str());
     }
     const std::wstring payload =
         BuildPromptPayload(req.promptBody, editorText, fence, userClipText);
