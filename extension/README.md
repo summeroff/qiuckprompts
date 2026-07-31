@@ -5,6 +5,22 @@ via **native messaging**. No AI API keys — it drives pages you already use.
 
 ## Install (unpacked)
 
+### Velopack install (Setup.exe)
+
+1. Run **QiuckPrompts-win-Setup.exe** — install hook seeds config, registers the
+   native messaging host, and copies the extension to a **stable** folder:
+   `%LOCALAPPDATA%\QiuckPrompts\extension`
+2. Chrome / Chrome Dev / Edge → `chrome://extensions` (or `edge://extensions`)
+3. Enable **Developer mode**
+4. **Load unpacked** → select  
+   `%LOCALAPPDATA%\QiuckPrompts\extension`  
+   (not `current\extension` — that path is replaced on every app update)
+5. Confirm extension id is **`aodehlngahndannepofbddnacfaldmih`**
+6. Start the tray app. After **app updates**, open `chrome://extensions` and click
+   **Reload** on QiuckPrompts if paste stops working (files change under the same path).
+
+### Dev / portable (repo build)
+
 1. Build/run **QiuckPrompts** once so it registers the native host  
    (`%LOCALAPPDATA%\QiuckPrompts\nm\` + HKCU registry).
 2. Chrome / Chrome Dev / Edge → `chrome://extensions` (or `edge://extensions`)

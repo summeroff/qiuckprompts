@@ -9,6 +9,7 @@
 #include "crash_log.hpp"
 #include "crash_test.hpp"
 #include "ext_bridge.hpp"
+#include "updater.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -265,6 +266,12 @@ void App::OnMenuCommand(UINT cmd)
             OpenInExplorer(GetAppDataDir(true));
         break;
     }
+    case TrayIcon::IdCheckUpdates: {
+        const std::wstring feed = cfg_.updateUrl.empty() ? DefaultUpdateFeedUrl() : cfg_.updateUrl;
+        QP_LOG_INFO(L"tray: check for updates feed=%s", feed.c_str());
+        RunUpdateFlowInteractive(feed, hwnd_);
+        break;
+    }
     default:
         break;
     }
@@ -297,6 +304,8 @@ void App::ShowAbout()
     text += logPath_.empty() ? L"(none)" : logPath_;
     text += L"\nTitles: ";
     text += TitleSampleLogPath().empty() ? L"(none)" : TitleSampleLogPath();
+    text += L"\nUpdates: ";
+    text += IsVelopackInstalled() ? L"Velopack (Check for updates in tray)" : L"portable/dev build";
     text += L"\n\nTray → Sample window titles now  (after opening AI tabs)\n"
             L"Load unpacked extension from the extension/ folder for DOM paste.";
 
@@ -700,6 +709,35 @@ int App::RunSelfTest()
         expect(JsonGetString("{\"detail\":\"hi\"}", "detail", s) && s == "hi", L"JsonGetString");
         bool b = false;
         expect(JsonGetBool("{\"ok\":true}", "ok", b) && b, L"JsonGetBool");
+    }
+
+    expect(!DefaultUpdateFeedUrl().empty(), L"DefaultUpdateFeedUrl");
+    {
+        // Offline-safe: do not hit the network during --self-test.
+        if (!IsVelopackInstalled())
+        {
+            UpdateCheckResult ur;
+            expect(CheckForUpdates(L"", ur, nullptr), L"CheckForUpdates callable");
+            expect(ur.ok, L"CheckForUpdates ok");
+            expect(!ur.installed, L"CheckForUpdates not installed");
+            wprintf(L"[ OK ] updater: not Velopack-installed (expected for dev)\n");
+        } else
+        {
+            expect(!FindUpdateExe().empty(), L"FindUpdateExe when installed");
+            wprintf(L"[ OK ] updater: Velopack-installed (skipped network check in self-test)\n");
+        }
+
+        // Velopack hooks must be recognized without throwing "Unknown option".
+        {
+            wchar_t* fake[] = {const_cast<wchar_t*>(L"qiuckprompts.exe"),
+                               const_cast<wchar_t*>(L"--veloapp-obsolete"),
+                               const_cast<wchar_t*>(L"0.0.0")};
+            int hookCode = 99;
+            expect(TryHandleVelopackHook(3, fake, &hookCode), L"TryHandleVelopackHook obsolete");
+            expect(hookCode == 0, L"veloapp-obsolete exit 0");
+            wprintf(L"[ OK ] velopack hook --veloapp-obsolete handled\n");
+        }
+        expect(!GetStableExtensionDir(true).empty(), L"GetStableExtensionDir");
     }
 
     wprintf(L"\n%d failure(s)\n", failures);

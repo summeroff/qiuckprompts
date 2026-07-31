@@ -688,6 +688,27 @@ bool EnsureNativeMessagingRegistration(const std::wstring& extensionId, std::wst
     return true;
 }
 
+bool RemoveNativeMessagingRegistration(std::wstring* error)
+{
+    const std::wstring valueName = QP_NM_HOST_NAME_W;
+    const std::wstring keys[] = {
+        std::wstring(L"Software\\Google\\Chrome\\NativeMessagingHosts\\") + valueName,
+        std::wstring(L"Software\\Chromium\\NativeMessagingHosts\\") + valueName,
+        std::wstring(L"Software\\Microsoft\\Edge\\NativeMessagingHosts\\") + valueName,
+    };
+    bool any = false;
+    for (const auto& k : keys)
+    {
+        const LONG rc = RegDeleteKeyW(HKEY_CURRENT_USER, k.c_str());
+        if (rc == ERROR_SUCCESS || rc == ERROR_FILE_NOT_FOUND)
+            any = true;
+    }
+    if (!any && error)
+        *error = L"failed to remove NM registry keys";
+    QP_LOG_INFO(L"ext_bridge: NM host registry removed");
+    return true; // best-effort; missing keys are fine
+}
+
 int RunNativeMessagingHost()
 {
     // Connect to tray pipe (retry a few seconds — tray may still be starting).

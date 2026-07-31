@@ -123,6 +123,7 @@ set(QP_SOURCES
     src/crash_log.cpp
     src/crash_test.cpp
     src/ext_bridge.cpp
+    src/updater.cpp
     resources/app.rc
 )
 
@@ -144,6 +145,7 @@ set(QP_HEADERS
     include/crash_log.hpp
     include/crash_test.hpp
     include/ext_bridge.hpp
+    include/updater.hpp
     resources/resource.h
 )
 
@@ -174,6 +176,7 @@ target_link_libraries(qiuckprompts PRIVATE
     psapi
     uiautomationcore
     dbghelp
+    winhttp
 )
 
 # Portable layout next to the exe (install template + unpacked extension for dev)

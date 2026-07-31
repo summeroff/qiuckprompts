@@ -2,7 +2,7 @@
 #
 # Jobs:
 #   format — clang-format dry-run against .clang-format (Allman braces, } else { ok)
-#   build  — VS 2022 Debug + --self-test; release zip on tags v*
+#   build  — VS 2022 Debug + --self-test; Velopack Setup + zip on tags v*
 #
 # Version: local/PR/untagged CI → CMake default 0.0.0-dev.
 #          tag vX.Y.Z → -DQP_RELEASE_VERSION=X.Y.Z (no leading v).
@@ -59,10 +59,15 @@ jobs:
             Write-Host "Tagged release version: $v"
             "version=$v" >> $env:GITHUB_OUTPUT
             "is_release=true" >> $env:GITHUB_OUTPUT
+            # SemVer pre-release (1.0.0-b1, 1.0.0-beta.1, …) → GitHub prerelease
+            $pre = $v -match '-'
+            "prerelease=$($pre.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+            Write-Host "prerelease=$pre"
           } else {
             Write-Host "Non-tag build — CMake default 0.0.0-dev"
             "version=" >> $env:GITHUB_OUTPUT
             "is_release=false" >> $env:GITHUB_OUTPUT
+            "prerelease=false" >> $env:GITHUB_OUTPUT
           }
 
       - name: Configure (VS 2022 x64)
@@ -98,7 +103,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: cmake --build build --config RelWithDebInfo --parallel
 
-      - name: Package release zip
+      - name: Smoke-test release binary
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: .\build\RelWithDebInfo\qiuckprompts.exe --self-test
+
+      - name: Package portable zip
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
@@ -113,18 +122,44 @@ jobs:
           if (Test-Path "README.md") { Copy-Item "README.md" "$dir/" }
           if (Test-Path "LICENSE")   { Copy-Item "LICENSE"   "$dir/" }
           if (Test-Path "config")    { Copy-Item "config" "$dir/config" -Recurse }
+          if (Test-Path "extension") { Copy-Item "extension" "$dir/extension" -Recurse }
           Compress-Archive -Path "$dir/*" -DestinationPath "$name.zip" -Force
           Get-Item "$name.zip" | Format-List Name, Length, FullName
 
-      - name: Smoke-test release binary
+      - name: Setup .NET (for vpk)
         if: startsWith(github.ref, 'refs/tags/v')
-        run: .\build\RelWithDebInfo\qiuckprompts.exe --self-test
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Install Velopack CLI (vpk)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: dotnet tool install -g vpk --version 1.2.0
+
+      - name: Velopack pack (Setup + nupkg)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          & scripts\pack-velopack.bat $ver RelWithDebInfo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem releases | Format-Table Name, Length
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: qiuckprompts-*-win-x64.zip
+          name: QiuckPrompts ${{ steps.ver.outputs.version }}
+          prerelease: ${{ steps.ver.outputs.prerelease }}
+          files: |
+            qiuckprompts-*-win-x64.zip
+            releases/QiuckPrompts-win-Setup.exe
+            releases/QiuckPrompts-win-Portable.zip
+            releases/*-full.nupkg
+            releases/releases.win.json
+            releases/assets.win.json
+            releases/RELEASES
           generate_release_notes: true
           fail_on_unmatched_files: true
         env:

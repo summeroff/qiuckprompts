@@ -34,8 +34,11 @@ CTestTestfile.cmake
 
 # Packaging / release scratch
 dist/
+releases/
+build/velopack-pack/
 *.zip
 *.7z
+*.nupkg
 
 # Logs / local runtime
 logs/
