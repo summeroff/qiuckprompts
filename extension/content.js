@@ -35,18 +35,33 @@ function boot() {
   function scoreComposer(el) {
     let s = 0;
     const r = el.getBoundingClientRect();
-    if (r.top > (window.innerHeight || 800) * 0.35) s += 30;
+    const vh = window.innerHeight || 800;
+    // Prefer lower half / bottom dock (chat composers).
+    if (r.top > vh * 0.35) s += 30;
+    if (r.top > vh * 0.55) s += 15;
     if (r.height >= 24 && r.height < 400) s += 10;
+    if (r.height >= 40) s += 8;
     if (r.width > 200) s += 10;
+    if (r.width > 360) s += 8;
     const tag = (el.tagName || '').toLowerCase();
     if (tag === 'textarea') s += 15;
     if (el.getAttribute('contenteditable') === 'true') s += 20;
     if (el.getAttribute('role') === 'textbox') s += 20;
+    if (el.getAttribute('data-lexical-editor') === 'true') s += 25;
     const aria =
-      (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('placeholder') || '');
-    if (/message|ask|prompt|chat|reply/i.test(aria)) s += 25;
-    if (/search|address|omnibox|find/i.test(aria)) s -= 80;
+      (el.getAttribute('aria-label') || '') +
+      ' ' +
+      (el.getAttribute('placeholder') || '') +
+      ' ' +
+      (el.getAttribute('aria-placeholder') || '');
+    if (/message|ask|prompt|chat|reply|gemini|enter a prompt/i.test(aria)) s += 30;
+    if (/search|address|omnibox|find|filter/i.test(aria)) s -= 80;
+    // Tiny top chrome / transient loaders.
     if (r.top < 80 && r.height < 50) s -= 40;
+    if (r.height < 28 && r.width < 280) s -= 25;
+    // Reject non-editable shells.
+    if (el.getAttribute('contenteditable') === 'false') s -= 50;
+    if (el.getAttribute('aria-disabled') === 'true' || el.disabled) s -= 50;
     return s;
   }
 
@@ -65,8 +80,96 @@ function boot() {
       }
     }
     candidates.sort((a, b) => b.score - a.score);
-    if (candidates.length && candidates[0].score >= 20) return candidates[0].el;
+    // Cold Gemini shells sometimes expose weak textboxes early — require a real score.
+    if (candidates.length && candidates[0].score >= 35) return candidates[0].el;
     return null;
+  }
+
+  function composerKey(el) {
+    if (!el) return '';
+    try {
+      const r = el.getBoundingClientRect();
+      return [
+        el.tagName,
+        el.getAttribute('role') || '',
+        el.getAttribute('aria-label') || '',
+        el.getAttribute('data-lexical-editor') || '',
+        Math.round(r.top),
+        Math.round(r.left),
+        Math.round(r.width),
+        Math.round(r.height),
+      ].join('|');
+    } catch {
+      return String(el);
+    }
+  }
+
+  /**
+   * Wait until the same high-scoring composer is observed N times in a row.
+   * Avoids pasting into Gemini/Meta load shells that are replaced on hydrate.
+   */
+  function waitForStableComposer(timeoutMs, opts = {}) {
+    const cold = !!opts.cold;
+    const needStable = cold ? 3 : 2;
+    const pollMs = cold ? 200 : 150;
+    const start = Date.now();
+    let lastKey = '';
+    let streak = 0;
+    let lastEl = null;
+
+    return new Promise((resolve) => {
+      const tick = () => {
+        const el = findComposer();
+        if (el) {
+          const key = composerKey(el);
+          // Always refresh lastEl so we never return a detached node if SPA
+          // replaced the element with one that shares the same key.
+          lastEl = el;
+          if (key && key === lastKey) {
+            streak += 1;
+          } else {
+            lastKey = key;
+            streak = 1;
+          }
+          if (streak >= needStable) {
+            resolve(lastEl);
+            return;
+          }
+        } else {
+          lastKey = '';
+          streak = 0;
+          lastEl = null;
+        }
+        if (Date.now() - start >= timeoutMs) {
+          resolve(lastEl); // may be null
+          return;
+        }
+        setTimeout(tick, pollMs);
+      };
+      tick();
+    });
+  }
+
+  function textStillPresent(el, text) {
+    const compact = (s) => String(s || '').replace(/\s+/g, '');
+    const pay = compact(text);
+    if (!pay) return true;
+    const got = compact(sniffText(el));
+    if (!got) return false;
+    // Require a meaningful prefix match (full paste may normalize quotes/newlines).
+    const probe = pay.slice(0, Math.min(48, pay.length));
+    return got.includes(probe);
+  }
+
+  async function pasteWithVerify(el, text) {
+    const ok = await pasteInto(el, text);
+    if (!ok) return { ok: false, detail: 'paste failed' };
+    // SPA hydrate can wipe a successful DOM write a moment later.
+    await sleep(220);
+    if (textStillPresent(el, text)) {
+      return { ok: true, detail: 'paste verified' };
+    }
+    return { ok: false, detail: 'paste wiped after hydrate' };
   }
 
   function escapeHtml(s) {
@@ -323,22 +426,7 @@ function boot() {
   }
 
   function waitForComposer(timeoutMs) {
-    const start = Date.now();
-    return new Promise((resolve) => {
-      const tick = () => {
-        const el = findComposer();
-        if (el) {
-          resolve(el);
-          return;
-        }
-        if (Date.now() - start >= timeoutMs) {
-          resolve(null);
-          return;
-        }
-        setTimeout(tick, 150);
-      };
-      tick();
-    });
+    return waitForStableComposer(timeoutMs, { cold: false });
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -353,35 +441,54 @@ function boot() {
           return;
         }
         if (msg.cmd === 'findComposer') {
-          const el = findComposer();
+          const cold = !!msg.cold;
+          const el = await waitForStableComposer(Math.max(500, Number(msg.timeoutMs) || 15000), {
+            cold,
+          });
           sendResponse({
             ok: !!el,
-            detail: el ? `found ${el.tagName}` : 'no composer',
+            detail: el ? `found ${el.tagName} score-stable` : 'no composer',
             href: location.href,
           });
           return;
         }
         if (msg.cmd === 'waitAndPaste') {
           const timeoutMs = Math.max(500, Number(msg.timeoutMs) || 15000);
-          const el = await waitForComposer(timeoutMs);
-          if (!el) {
-            sendResponse({ ok: false, error: 'composer not found', href: location.href });
-            return;
-          }
+          const cold = !!msg.cold;
           const text = String(msg.text ?? '');
           const nl = (text.match(/\r\n|\n|\r/g) || []).length;
-          const pasted = await pasteInto(el, text);
-          const after = sniffText(el);
-          // Detect accidental multi-insert (payload appears more than once).
+          const t0 = Date.now();
+
+          let el = await waitForStableComposer(timeoutMs, { cold });
+          if (!el) {
+            sendResponse({
+              ok: false,
+              error: 'composer not found',
+              href: location.href,
+              cold,
+              waitedMs: Date.now() - t0,
+            });
+            return;
+          }
+
+          let result = await pasteWithVerify(el, text);
+          // One retry after wipe/hydrate (common on cold Gemini open).
+          if (!result.ok) {
+            const remain = Math.max(800, timeoutMs - (Date.now() - t0));
+            await sleep(cold ? 500 : 250);
+            el = await waitForStableComposer(remain, { cold: true });
+            if (el) result = await pasteWithVerify(el, text);
+          }
+
+          const after = el ? sniffText(el) : '';
           const compact = (s) => String(s).replace(/\s+/g, '');
           const cPay = compact(text);
           const cAfter = compact(after);
-          let detail = pasted
-            ? `pasted ${text.length} chars newlines=${nl}`
-            : 'paste failed';
-          if (pasted && cPay.length > 20 && cAfter.includes(cPay + cPay)) {
+          let detail = result.ok
+            ? `pasted ${text.length} chars newlines=${nl} ${result.detail || ''}`.trim()
+            : result.detail || 'paste failed';
+          if (result.ok && cPay.length > 20 && cAfter.includes(cPay + cPay)) {
             detail += ' WARN:duplicate_detected';
-            // Best-effort one reset to a single copy.
             clearComposer(el);
             await sleep(0);
             try {
@@ -393,10 +500,15 @@ function boot() {
               /* ignore */
             }
           }
+          if (cold) detail += ' cold=1';
+          detail += ` waitedMs=${Date.now() - t0}`;
+
           sendResponse({
-            ok: pasted,
+            ok: !!result.ok,
             detail,
+            error: result.ok ? undefined : result.detail || 'paste failed',
             href: location.href,
+            cold,
           });
           return;
         }
