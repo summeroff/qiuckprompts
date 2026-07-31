@@ -358,7 +358,7 @@ void App::ShowHotkeyList()
     {
         text += L"(none registered)\n";
     }
-    text += L"\nLeft hand: Ctrl+Alt   Right hand: J K L I O";
+    text += L"\nLeft hand: Ctrl+Alt   Right hand: J K L I O M";
     text += L"\nTrigger: ";
     text += HotkeyTriggerModeName(cfg_.hotkeyTrigger);
     text += L" (action runs after you let go)";

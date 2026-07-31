@@ -250,9 +250,11 @@ void GetBuiltinBindings(std::vector<HotkeyBinding>& out)
         L"Light edit only. Fix grammar, spelling, and awkward wording.\n"
         L"Keep my voice. Minimal changes.\n",
         true, false);
-    add(L'K', L"fact_gemini", L"Deep fact-check (Gemini)", L"gemini",
+    add(L'K', L"fact_gemini", L"Improve message (Gemini)", L"gemini",
         L"https://gemini.google.com/app", L"Gemini",
-        L"Deep fact-check with sources for claims in the message.\n", true, false);
+        L"Improve the message: fact-check claims with sources, fix grammar/clarity, "
+        L"and return a recommended ready-to-paste message.\n",
+        true, false);
     add(L'L', L"idea_grok", L"Idea collab (Grok)", L"grok", L"https://grok.com/", L"Grok",
         L"Collaborate on this idea. Push back and suggest next steps.\n", true, false);
     add(L'O', L"grammar_context_gemini", L"Grammar in context (Gemini)", L"gemini",
@@ -264,10 +266,18 @@ void GetBuiltinBindings(std::vector<HotkeyBinding>& out)
         L"My message:\n```\n{{TEXT}}\n```\n\n"
         L"Context (clipboard before capture; may be empty):\n```\n{{CONTEXT}}\n```\n",
         true, false);
-    add(L'I', L"screenshot_meta", L"Screenshot review (Meta)", L"meta", L"https://www.meta.ai/",
-        L"Meta",
-        L"Screenshot attached. Polish my draft comment; do not over-explain visible context.\n",
+    add(L'I', L"screenshot_gemini", L"Screenshot review (Gemini)", L"gemini",
+        L"https://gemini.google.com/app", L"Gemini",
+        L"Screenshot attached. Read dialog/UI structure from the image. Polish my draft comment; "
+        L"do not over-explain visible context.\n",
         false, true);
+    add(L'M', L"song_chatgpt", L"Song from clipboard (ChatGPT -> Suno)", L"chatgpt",
+        L"https://chatgpt.com/", L"ChatGPT",
+        L"Turn clipboard inspiration into a Suno AI Custom-mode song (Style + Lyrics).\n"
+        L"Apply current Suno limits/abilities/recommendations yourself.\n"
+        L"Preferred style / direction (edit before send):\n<<<STYLE: >>>\n\n"
+        L"Inspiration:\n```\n{{CONTEXT}}\n```\n",
+        false, false);
 }
 
 bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstring* error)

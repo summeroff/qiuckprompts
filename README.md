@@ -57,26 +57,29 @@ Single-line `prompt=...` still works. External `prompt=file.txt` is optional if 
 | Hotkey | Service | Purpose |
 |--------|---------|---------|
 | `Ctrl+Alt+J` | Meta | Quick grammar / light sanity, keep your voice |
-| `Ctrl+Alt+O` | Meta | Grammar in-thread; no over-explaining context |
-| `Ctrl+Alt+K` | Gemini | Deep fact-check + sources |
+| `Ctrl+Alt+O` | Gemini | Grammar in-thread; optional clipboard `{{CONTEXT}}` |
+| `Ctrl+Alt+K` | Gemini | Improve message: fact-check + grammar + recommended text |
 | `Ctrl+Alt+L` | Grok | Collaborate on an idea |
-| `Ctrl+Alt+I` | Meta | Screenshot on clipboard + review prompt |
+| `Ctrl+Alt+I` | Gemini | Screenshot on clipboard + dialog structure / polish |
+| `Ctrl+Alt+M` | ChatGPT | Clipboard → Suno-ready style + lyrics (`<<<STYLE: >>>` editable) |
 
 Restart the app after edits. Override path: `--config=D:\path\qiuckprompts.ini`
 
-Screenshot flow: Win+Shift+S, then `Ctrl+Alt+I`.
+Screenshot flow: Win+Shift+S, then `Ctrl+Alt+I`.  
+Song flow: copy inspiration → `Ctrl+Alt+M` → optionally edit `<<<STYLE: >>>` in ChatGPT → send.
 
 ## Default hotkeys (from config)
 
 | Hotkey | Action |
 |--------|--------|
-| `Ctrl+Alt+J` | Grammar check → AI |
-| `Ctrl+Alt+K` | Fact check → AI |
-| `Ctrl+Alt+L` | Summarize → AI |
-| `Ctrl+Alt+I` | Explain simply → AI |
-| `Ctrl+Alt+O` | Code review → AI |
+| `Ctrl+Alt+J` | Grammar quick → Meta |
+| `Ctrl+Alt+K` | Improve message (facts + grammar) → Gemini |
+| `Ctrl+Alt+L` | Idea collab → Grok |
+| `Ctrl+Alt+I` | Screenshot review → Gemini |
+| `Ctrl+Alt+O` | Grammar in context → Gemini |
+| `Ctrl+Alt+M` | Song from clipboard → ChatGPT (Suno) |
 
-Edit bindings, prompts, and AI URL in **`include/config.hpp`**, then rebuild.
+Edit bindings and prompts in **`%LOCALAPPDATA%\QiuckPrompts\qiuckprompts.ini`** (seed: `config/qiuckprompts.ini`).
 
 ## Requirements
 

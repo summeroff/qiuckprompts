@@ -55,7 +55,7 @@ struct HotkeyBinding
     HotkeySpec hotkey;
     std::wstring name; // ini section id
     std::wstring label;
-    std::wstring service;    // meta | gemini | grok | ...
+    std::wstring service;    // meta | gemini | grok | chatgpt | ...
     std::wstring templateId; // alias of name (compat)
     ActionKind action = ActionKind::SendToAi;
     std::wstring aiUrl;
