@@ -169,6 +169,7 @@ git push origin v0.3.2
 | Trigger | Git tag matching `v*` |
 | Version | Tag without `v` → PE + About + Velopack pack version |
 | Local/PR | Always `0.0.0-dev` (not a release) |
+| Beta tags | e.g. `v1.0.0-b1` (SemVer pre-release; GitHub **prerelease**) |
 | Build | `RelWithDebInfo` (MSVC x64) |
 | Installer | `QiuckPrompts-win-Setup.exe` (Velopack one-click → `%LocalAppData%\QiuckPrompts`) |
 | Portable | `QiuckPrompts-win-Portable.zip` (Velopack portable layout) |

@@ -59,10 +59,15 @@ jobs:
             Write-Host "Tagged release version: $v"
             "version=$v" >> $env:GITHUB_OUTPUT
             "is_release=true" >> $env:GITHUB_OUTPUT
+            # SemVer pre-release (1.0.0-b1, 1.0.0-beta.1, …) → GitHub prerelease
+            $pre = $v -match '-'
+            "prerelease=$($pre.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+            Write-Host "prerelease=$pre"
           } else {
             Write-Host "Non-tag build — CMake default 0.0.0-dev"
             "version=" >> $env:GITHUB_OUTPUT
             "is_release=false" >> $env:GITHUB_OUTPUT
+            "prerelease=false" >> $env:GITHUB_OUTPUT
           }
 
       - name: Configure (VS 2022 x64)
@@ -145,6 +150,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: QiuckPrompts ${{ steps.ver.outputs.version }}
+          prerelease: ${{ steps.ver.outputs.prerelease }}
           files: |
             qiuckprompts-*-win-x64.zip
             releases/QiuckPrompts-win-Setup.exe
