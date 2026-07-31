@@ -86,11 +86,12 @@ async function sendToTab(tabId, message, attempts = 12) {
       if (resp) return resp;
     } catch (e) {
       lastErr = String(e);
-      // Content script may not be injected yet — try scripting.executeScript inject.
-      if (i === 2 || i === 6) {
+      // Content script may not be injected yet. Inject once into the main frame only
+      // (allFrames + re-inject used to stack multiple onMessage listeners → multi-paste).
+      if (i === 2) {
         try {
           await chrome.scripting.executeScript({
-            target: { tabId, allFrames: true },
+            target: { tabId, allFrames: false },
             files: ['content.js'],
           });
         } catch (inj) {
