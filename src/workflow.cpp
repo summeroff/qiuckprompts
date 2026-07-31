@@ -164,7 +164,7 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
     // (select context on a page → Ctrl+C → focus draft → hotkey).
     if (!userClipText.empty() && (req.promptBody.find(L"{{CONTEXT}}") != std::wstring::npos))
     {
-        // Length only at INFO — clipboard often holds secrets; no content preview here.
+        // INFO: length only. DEBUG may preview clipboard text (often sensitive).
         QP_LOG_INFO(L"workflow: context from pre-capture clipboard (%zu wchar)",
                     userClipText.size());
         QP_LOG_DEBUG(L"workflow: context clipboard preview='%s'",
@@ -172,8 +172,9 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
     }
     const std::wstring payload =
         BuildPromptPayload(req.promptBody, editorText, fence, userClipText);
-    QP_LOG_INFO(L"workflow: payload %zu wchar fence=%d preview='%s'", payload.size(), fence ? 1 : 0,
-                PayloadPreview(payload, 200).c_str());
+    // Payload can embed {{CONTEXT}} (pre-capture clipboard) — never preview at INFO.
+    QP_LOG_INFO(L"workflow: payload %zu wchar fence=%d", payload.size(), fence ? 1 : 0);
+    QP_LOG_DEBUG(L"workflow: payload preview='%s'", PayloadPreview(payload, 200).c_str());
 
     // --- Extension path (DOM) when companion is connected ---
     // Image paste still needs clipboard + browser focus (extension text-only for now).
@@ -324,9 +325,10 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
     }
 
     bool usedClipboardForText = false;
-    QP_LOG_INFO(L"workflow: deliver text payload (%zu wchar) via=%s preview='%s'", payload.size(),
-                cfg_.pasteTextViaUnicode ? L"unicode" : L"clipboard",
-                PayloadPreview(payload, 120).c_str());
+    QP_LOG_INFO(L"workflow: deliver text payload (%zu wchar) via=%s", payload.size(),
+                cfg_.pasteTextViaUnicode ? L"unicode" : L"clipboard");
+    QP_LOG_DEBUG(L"workflow: deliver text payload preview='%s'",
+                 PayloadPreview(payload, 120).c_str());
 
     if (cfg_.pasteTextViaUnicode)
     {
