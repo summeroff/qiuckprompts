@@ -1,4 +1,5 @@
 #include "updater.hpp"
+#include "autostart.hpp"
 #include "ext_bridge.hpp"
 #include "logger.hpp"
 #include "util.hpp"
@@ -775,7 +776,9 @@ bool TryHandleVelopackHook(int argc, wchar_t** argv, int* exitCode)
         {
             std::wstring err;
             RemoveNativeMessagingRegistration(&err);
-            QP_LOG_INFO(L"velopack uninstall: NM registry cleared");
+            err.clear();
+            SyncStartWithWindows(false, &err); // clear HKCU Run
+            QP_LOG_INFO(L"velopack uninstall: NM registry + autostart cleared");
         } else if (wcscmp(hook, L"--veloapp-obsolete") == 0)
         {
             QP_LOG_INFO(L"velopack obsolete: no-op");

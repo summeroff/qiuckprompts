@@ -26,6 +26,7 @@ public:
         IdOpenDataDir = 1008,
         IdOpenConfig = 1009,
         IdCheckUpdates = 1010,
+        IdToggleStartWithWindows = 1011,
     };
 
     TrayIcon() = default;
@@ -38,6 +39,7 @@ public:
                 std::wstring* error = nullptr);
     void Destroy();
     void SetTooltip(const std::wstring& tip);
+    void SetStartWithWindowsChecked(bool checked) { startWithWindowsChecked_ = checked; }
     void OnTrayMessage(WPARAM wParam, LPARAM lParam);
 
     using MenuHandler = std::function<void(UINT cmd)>;
@@ -51,6 +53,7 @@ private:
     bool added_ = false;
     MenuHandler menuHandler_;
     NOTIFYICONDATAW nid_{};
+    bool startWithWindowsChecked_ = false;
 };
 
 } // namespace qp

@@ -123,6 +123,10 @@ void TrayIcon::ShowContextMenu()
     AppendMenuW(menu, MF_STRING, IdOpenConfig, L"Open config");
     AppendMenuW(menu, MF_STRING, IdOpenDataDir, L"Open data folder");
     AppendMenuW(menu, MF_STRING, IdCheckUpdates, L"Check for updates…");
+    {
+        const UINT flags = MF_STRING | (startWithWindowsChecked_ ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuW(menu, flags, IdToggleStartWithWindows, L"Start with Windows");
+    }
     AppendMenuW(menu, MF_STRING, IdAbout, L"About");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, IdExit, L"Exit");

@@ -182,6 +182,7 @@ git push origin v0.3.2
 1. Download **QiuckPrompts-win-Setup.exe** and run (no admin).
 2. Config/logs stay in `%LOCALAPPDATA%\QiuckPrompts\` (not wiped by updates).
 3. Tray → **Check for updates…** fetches the latest feed and applies via `Update.exe`.
+4. Tray → **Start with Windows** (checked) registers HKCU Run for the Velopack stub when installed.
 
 **Chrome companion after Setup:**
 

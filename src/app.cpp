@@ -10,6 +10,7 @@
 #include "crash_test.hpp"
 #include "ext_bridge.hpp"
 #include "updater.hpp"
+#include "autostart.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -132,6 +133,7 @@ bool App::InitTray(std::wstring* error)
     {
         return false;
     }
+    tray_.SetStartWithWindowsChecked(IsStartWithWindowsEnabled());
     tray_.SetMenuHandler([this](UINT cmd) { OnMenuCommand(cmd); });
     return true;
 }
@@ -272,6 +274,23 @@ void App::OnMenuCommand(UINT cmd)
         RunUpdateFlowInteractive(feed, hwnd_);
         break;
     }
+    case TrayIcon::IdToggleStartWithWindows: {
+        const bool next = !IsStartWithWindowsEnabled();
+        std::wstring aerr;
+        if (!SyncStartWithWindows(next, &aerr))
+        {
+            QP_LOG_ERROR(L"autostart toggle failed: %s", aerr.c_str());
+            MessageBoxW(hwnd_, (L"Could not update Start with Windows:\n" + aerr).c_str(),
+                        QP_APP_DISPLAY_W, MB_OK | MB_ICONWARNING);
+        } else
+        {
+            cfg_.startWithWindows = next;
+            tray_.SetStartWithWindowsChecked(next);
+            QP_LOG_INFO(L"autostart tray toggle → %d path=%s", next ? 1 : 0,
+                        GetPreferredLaunchExePath().c_str());
+        }
+        break;
+    }
     default:
         break;
     }
@@ -306,8 +325,10 @@ void App::ShowAbout()
     text += TitleSampleLogPath().empty() ? L"(none)" : TitleSampleLogPath();
     text += L"\nUpdates: ";
     text += IsVelopackInstalled() ? L"Velopack (Check for updates in tray)" : L"portable/dev build";
+    text += L"\nStart with Windows: ";
+    text += IsStartWithWindowsEnabled() ? L"yes" : L"no";
     text += L"\n\nTray → Sample window titles now  (after opening AI tabs)\n"
-            L"Load unpacked extension from the extension/ folder for DOM paste.";
+            L"Load unpacked extension from %LOCALAPPDATA%\\QiuckPrompts\\extension.";
 
     MessageBoxW(nullptr, text.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONINFORMATION);
 }
@@ -470,17 +491,48 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         }
     }
 
-    // CLI --no-extension wins over ini prefer_extension= (LoadConfigFile runs after argv parse).
+    // CLI flags that must win over ini (LoadConfigFile runs after argv parse).
+    bool cliForceAutostartOn = false;
+    bool cliForceAutostartOff = false;
     if (argv)
     {
         for (int i = 1; i < argc; ++i)
         {
-            if (argv[i] && wcscmp(argv[i], L"--no-extension") == 0)
-            {
+            if (!argv[i])
+                continue;
+            if (wcscmp(argv[i], L"--no-extension") == 0)
                 cfg_.workflow.preferExtension = false;
-                break;
+            if (wcscmp(argv[i], L"--start-with-windows") == 0)
+            {
+                cfg_.startWithWindows = true;
+                cliForceAutostartOn = true;
+            }
+            if (wcscmp(argv[i], L"--no-start-with-windows") == 0)
+            {
+                cfg_.startWithWindows = false;
+                cliForceAutostartOff = true;
             }
         }
+    }
+
+    // Autostart (HKCU Run):
+    //  - CLI --start-with-windows / --no-start-with-windows always apply
+    //  - ini start_with_windows=1 enables
+    //  - ini 0 / default does NOT clear a Run key the user enabled via tray
+    {
+        std::wstring aerr;
+        if (cliForceAutostartOff)
+        {
+            if (!SyncStartWithWindows(false, &aerr))
+                QP_LOG_WARN(L"autostart disable failed: %s", aerr.c_str());
+        } else if (cliForceAutostartOn || cfg_.startWithWindows)
+        {
+            if (!SyncStartWithWindows(true, &aerr))
+                QP_LOG_WARN(L"autostart enable failed: %s", aerr.c_str());
+        }
+        cfg_.startWithWindows = IsStartWithWindowsEnabled();
+        QP_LOG_INFO(L"autostart enabled=%d launch=%s", cfg_.startWithWindows ? 1 : 0,
+                    GetPreferredLaunchExePath().c_str());
     }
 
     // Native messaging host registration + pipe server for MV3 companion.
@@ -738,6 +790,22 @@ int App::RunSelfTest()
             wprintf(L"[ OK ] velopack hook --veloapp-obsolete handled\n");
         }
         expect(!GetStableExtensionDir(true).empty(), L"GetStableExtensionDir");
+    }
+
+    // Autostart: enable then disable (leave machine clean).
+    {
+        expect(!GetPreferredLaunchExePath().empty(), L"GetPreferredLaunchExePath");
+        std::wstring aerr;
+        const bool before = IsStartWithWindowsEnabled();
+        expect(SyncStartWithWindows(true, &aerr), L"SyncStartWithWindows enable");
+        expect(IsStartWithWindowsEnabled(), L"autostart enabled after set");
+        aerr.clear();
+        expect(SyncStartWithWindows(false, &aerr), L"SyncStartWithWindows disable");
+        expect(!IsStartWithWindowsEnabled(), L"autostart disabled after clear");
+        // Restore prior state if self-test interrupted a user preference
+        if (before)
+            SyncStartWithWindows(true, nullptr);
+        wprintf(L"[ OK ] autostart enable/disable round-trip\n");
     }
 
     wprintf(L"\n%d failure(s)\n", failures);

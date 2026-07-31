@@ -129,6 +129,8 @@ struct AppConfig
     std::wstring extensionId = QP_EXTENSION_ID_W;
     // Velopack feed base URL (directory with releases.win.json + nupkg). Empty → default GitHub.
     std::wstring updateUrl;
+    // Start with Windows (HKCU Run). Applied after config load; tray can toggle live.
+    bool startWithWindows = false;
     std::vector<HotkeyBinding> bindings;
 };
 

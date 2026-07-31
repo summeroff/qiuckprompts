@@ -451,6 +451,8 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
             cfg.extensionId = Trim(get(L"extension_id"));
         if (!get(L"update_url").empty())
             cfg.updateUrl = Trim(get(L"update_url"));
+        if (!get(L"start_with_windows").empty())
+            cfg.startWithWindows = get(L"start_with_windows") != L"0";
     }
 
     cfg.bindings.clear();
@@ -689,6 +691,16 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         if (TakeEqValue(i, argc, argv, arg, L"--update-url", v))
         {
             cfg.updateUrl = v;
+            continue;
+        }
+        if (arg == L"--start-with-windows")
+        {
+            cfg.startWithWindows = true;
+            continue;
+        }
+        if (arg == L"--no-start-with-windows")
+        {
+            cfg.startWithWindows = false;
             continue;
         }
 
