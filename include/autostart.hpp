@@ -14,10 +14,8 @@ std::wstring GetPreferredLaunchExePath();
 bool IsStartWithWindowsEnabled();
 bool SetStartWithWindows(bool enable, std::wstring* error = nullptr);
 
-// Apply cfg preference to the Run key (call once after config load).
-// Does not clear an existing Run entry when prefer=false if user enabled via tray —
-// only writes when prefer=true, or when force=true.
-// Simpler: SyncStartWithWindows(bool want) always sets registry to match want.
+// Set HKCU Run to match `want` (true = write launch path, false = delete value).
+// Callers own higher-level policy (when to enable vs leave alone vs force off).
 bool SyncStartWithWindows(bool want, std::wstring* error = nullptr);
 
 } // namespace qp
