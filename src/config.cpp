@@ -615,6 +615,9 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
             // Handled in wWinMain before App::Run; ignore here.
             continue;
         }
+        // Velopack hooks are handled in wWinMain; ignore if they reach here.
+        if (arg.rfind(L"--veloapp-", 0) == 0)
+            continue;
         if (arg == L"--hotkey-on-press")
         {
             cfg.hotkeyTrigger = HotkeyTriggerMode::OnPress;

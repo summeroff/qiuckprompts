@@ -68,6 +68,9 @@ private:
 bool EnsureNativeMessagingRegistration(const std::wstring& extensionId,
                                        std::wstring* error = nullptr);
 
+// Remove HKCU NM host keys (Velopack uninstall hook). Leaves AppData files.
+bool RemoveNativeMessagingRegistration(std::wstring* error = nullptr);
+
 // stdio length-prefixed JSON relay to ExtBridge pipe. Does not return until Chrome closes stdin.
 int RunNativeMessagingHost();
 

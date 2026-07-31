@@ -2,6 +2,7 @@
 #include "crash_log.hpp"
 #include "crash_test.hpp"
 #include "ext_bridge.hpp"
+#include "updater.hpp"
 #include "version.hpp"
 
 #include <windows.h>
@@ -116,6 +117,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         if (argv)
             LocalFree(argv);
         return nm;
+    }
+
+    // Velopack Setup/Update runs the main exe with --veloapp-* hooks and expects
+    // a fast exit (0). Must run before normal CLI parsing (unknown option UI).
+    {
+        int hookCode = 0;
+        if (qp::TryHandleVelopackHook(argc, argv ? argv : nullptr, &hookCode))
+        {
+            if (argv)
+                LocalFree(argv);
+            return hookCode;
+        }
     }
 
     if (HasFlag(argc, argv, L"--self-test"))

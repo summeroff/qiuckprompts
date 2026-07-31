@@ -182,6 +182,15 @@ git push origin v0.3.2
 2. Config/logs stay in `%LOCALAPPDATA%\QiuckPrompts\` (not wiped by updates).
 3. Tray → **Check for updates…** fetches the latest feed and applies via `Update.exe`.
 
+**Chrome companion after Setup:**
+
+| Step | What |
+|------|------|
+| Install/update hook | Registers native messaging host; copies packaged `extension/` → `%LOCALAPPDATA%\QiuckPrompts\extension` (stable path) |
+| You once | Chrome → Load unpacked → that **stable** folder (not `current\extension`) |
+| After app update | Extension files are re-copied to the same path — click **Reload** on `chrome://extensions` if needed |
+| Uninstall | NM registry keys removed; your config/logs/extension folder are left |
+
 Local pack (needs [vpk](https://www.nuget.org/packages/vpk)):
 
 ```bat

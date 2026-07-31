@@ -48,4 +48,20 @@ bool DownloadAndApplyUpdate(const UpdateCheckResult& check, std::wstring* error 
 // (blocks UI briefly for check; download can take longer — keep UX simple).
 void RunUpdateFlowInteractive(const std::wstring& feedUrl, HWND owner);
 
+// Velopack Setup/Update invokes the main exe with fast-exit hooks:
+//   --veloapp-install VERSION
+//   --veloapp-updated VERSION
+//   --veloapp-obsolete VERSION
+//   --veloapp-uninstall VERSION
+// Handle them *before* normal CLI parsing (unknown flags would MessageBox-fail).
+// Returns true if a hook was handled; caller must exit with *exitCode (0 on success).
+bool TryHandleVelopackHook(int argc, wchar_t** argv, int* exitCode);
+
+// Stable unpacked-extension directory outside current\ (survives Velopack updates):
+// %LOCALAPPDATA%\QiuckPrompts\extension
+std::wstring GetStableExtensionDir(bool ensure = true);
+
+// Copy packaged extension/ (next to exe) → stable AppData extension dir.
+bool SyncPackagedExtensionToStable(std::wstring* error = nullptr);
+
 } // namespace qp

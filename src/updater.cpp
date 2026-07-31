@@ -1,4 +1,5 @@
 #include "updater.hpp"
+#include "ext_bridge.hpp"
 #include "logger.hpp"
 #include "util.hpp"
 #include "version.hpp"
@@ -635,6 +636,183 @@ void RunUpdateFlowInteractive(const std::wstring& feedUrl, HWND owner)
         PostMessageW(owner, WM_CLOSE, 0, 0);
     else
         PostQuitMessage(0);
+}
+
+namespace
+{
+
+bool CopyDirectoryRecursive(const std::wstring& srcDir, const std::wstring& dstDir)
+{
+    if (!DirectoryExists(srcDir))
+        return false;
+    if (!EnsureDirectory(dstDir))
+        return false;
+
+    const std::wstring pattern = PathJoin(srcDir, L"*");
+    WIN32_FIND_DATAW fd{};
+    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+
+    bool ok = true;
+    do
+    {
+        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0)
+            continue;
+        const std::wstring from = PathJoin(srcDir, fd.cFileName);
+        const std::wstring to = PathJoin(dstDir, fd.cFileName);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        {
+            if (!CopyDirectoryRecursive(from, to))
+            {
+                ok = false;
+                break;
+            }
+        } else
+        {
+            if (!CopyFileW(from.c_str(), to.c_str(), FALSE))
+            {
+                ok = false;
+                break;
+            }
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return ok;
+}
+
+const wchar_t* MatchVeloHook(const std::wstring& arg)
+{
+    static const wchar_t* kHooks[] = {
+        L"--veloapp-install",
+        L"--veloapp-updated",
+        L"--veloapp-obsolete",
+        L"--veloapp-uninstall",
+    };
+    for (const wchar_t* h : kHooks)
+    {
+        if (arg == h)
+            return h;
+        const size_t n = wcslen(h);
+        if (arg.size() > n && arg.compare(0, n, h) == 0 && arg[n] == L'=')
+            return h;
+    }
+    return nullptr;
+}
+
+void InitHookLog()
+{
+    const std::wstring logDir = GetUserLogsDir(true);
+    const std::wstring logFile = PathJoin(logDir, L"velopack-hook.log");
+    Logger::Instance().Init(logFile, LogLevel::Info, false);
+}
+
+} // namespace
+
+std::wstring GetStableExtensionDir(bool ensure)
+{
+    const std::wstring dir = PathJoin(GetAppDataDir(ensure), L"extension");
+    if (ensure)
+        EnsureDirectory(dir);
+    return dir;
+}
+
+bool SyncPackagedExtensionToStable(std::wstring* error)
+{
+    const std::wstring src = PathJoin(GetExeDir(), L"extension");
+    if (!DirectoryExists(src))
+    {
+        if (error)
+            *error = L"packaged extension/ missing next to exe";
+        return false;
+    }
+    const std::wstring dst = GetStableExtensionDir(true);
+    if (!CopyDirectoryRecursive(src, dst))
+    {
+        if (error)
+            *error = L"failed to copy extension to " + dst;
+        return false;
+    }
+    QP_LOG_INFO(L"updater: synced extension %s → %s", src.c_str(), dst.c_str());
+    return true;
+}
+
+bool TryHandleVelopackHook(int argc, wchar_t** argv, int* exitCode)
+{
+    if (exitCode)
+        *exitCode = 0;
+    if (!argv || argc < 2)
+        return false;
+
+    const wchar_t* hook = nullptr;
+    std::wstring version;
+    for (int i = 1; i < argc; ++i)
+    {
+        if (!argv[i])
+            continue;
+        const std::wstring arg = argv[i];
+        const wchar_t* h = MatchVeloHook(arg);
+        if (!h)
+            continue;
+        hook = h;
+        const size_t n = wcslen(h);
+        if (arg.size() > n && arg[n] == L'=')
+            version = arg.substr(n + 1);
+        else if (i + 1 < argc && argv[i + 1] && argv[i + 1][0] != L'-')
+            version = argv[i + 1];
+        break;
+    }
+    if (!hook)
+        return false;
+
+    InitHookLog();
+    QP_LOG_INFO(L"velopack hook %s version=%s", hook, version.c_str());
+
+    int code = 0;
+    try
+    {
+        if (wcscmp(hook, L"--veloapp-uninstall") == 0)
+        {
+            std::wstring err;
+            RemoveNativeMessagingRegistration(&err);
+            QP_LOG_INFO(L"velopack uninstall: NM registry cleared");
+        } else if (wcscmp(hook, L"--veloapp-obsolete") == 0)
+        {
+            QP_LOG_INFO(L"velopack obsolete: no-op");
+        } else
+        {
+            // install + updated
+            std::wstring cfgPath;
+            std::wstring err;
+            if (!EnsureUserConfigFile(&cfgPath, &err))
+                QP_LOG_WARN(L"velopack hook: EnsureUserConfigFile: %s", err.c_str());
+            else
+                QP_LOG_INFO(L"velopack hook: user config %s", cfgPath.c_str());
+
+            err.clear();
+            if (!SyncPackagedExtensionToStable(&err))
+                QP_LOG_WARN(L"velopack hook: extension sync: %s", err.c_str());
+
+            err.clear();
+            if (!EnsureNativeMessagingRegistration(L"", &err))
+            {
+                QP_LOG_ERROR(L"velopack hook: NM register failed: %s", err.c_str());
+                code = 1;
+            } else
+            {
+                QP_LOG_INFO(L"velopack hook: NM host registered");
+            }
+        }
+    } catch (...)
+    {
+        QP_LOG_ERROR(L"velopack hook: unexpected exception");
+        code = 1;
+    }
+
+    Logger::Instance().Shutdown();
+    if (exitCode)
+        *exitCode = code;
+    return true;
 }
 
 } // namespace qp

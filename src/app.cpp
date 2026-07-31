@@ -714,8 +714,6 @@ int App::RunSelfTest()
     expect(!DefaultUpdateFeedUrl().empty(), L"DefaultUpdateFeedUrl");
     {
         // Offline-safe: do not hit the network during --self-test.
-        // When not Velopack-installed, CheckForUpdates returns early without HTTP.
-        // When installed, only exercise FindUpdateExe / IsVelopackInstalled.
         if (!IsVelopackInstalled())
         {
             UpdateCheckResult ur;
@@ -728,6 +726,18 @@ int App::RunSelfTest()
             expect(!FindUpdateExe().empty(), L"FindUpdateExe when installed");
             wprintf(L"[ OK ] updater: Velopack-installed (skipped network check in self-test)\n");
         }
+
+        // Velopack hooks must be recognized without throwing "Unknown option".
+        {
+            wchar_t* fake[] = {const_cast<wchar_t*>(L"qiuckprompts.exe"),
+                               const_cast<wchar_t*>(L"--veloapp-obsolete"),
+                               const_cast<wchar_t*>(L"0.0.0")};
+            int hookCode = 99;
+            expect(TryHandleVelopackHook(3, fake, &hookCode), L"TryHandleVelopackHook obsolete");
+            expect(hookCode == 0, L"veloapp-obsolete exit 0");
+            wprintf(L"[ OK ] velopack hook --veloapp-obsolete handled\n");
+        }
+        expect(!GetStableExtensionDir(true).empty(), L"GetStableExtensionDir");
     }
 
     wprintf(L"\n%d failure(s)\n", failures);
