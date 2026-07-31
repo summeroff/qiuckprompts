@@ -167,7 +167,8 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
         // INFO: length only. DEBUG may preview clipboard text (often sensitive).
         QP_LOG_INFO(L"workflow: context from pre-capture clipboard (%zu wchar)",
                     userClipText.size());
-        QP_LOG_TRACE(L"workflow: context clipboard preview='%s'",
+        QP_LOG_TRACE(L"workflow: context clipboard preview='%s'",
+
                      PayloadPreview(userClipText, 80).c_str());
     }
     const std::wstring payload =
