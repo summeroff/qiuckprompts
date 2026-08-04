@@ -461,6 +461,13 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
             cfg.workflow.defaultAiUrl = get(L"default_ai_url");
         if (!get(L"prefer_extension").empty())
             cfg.workflow.preferExtension = get(L"prefer_extension") != L"0";
+        if (!get(L"paste_even_if_not_ready").empty())
+            cfg.workflow.pasteEvenIfNotReady = get(L"paste_even_if_not_ready") != L"0";
+        if (!get(L"cancel_on_focus_switch").empty())
+            cfg.workflow.cancelOnFocusSwitch = get(L"cancel_on_focus_switch") != L"0";
+        if (!get(L"page_ready_timeout_ms").empty())
+            cfg.workflow.pageReadyTimeoutMs =
+                ClampInt(_wtoi(get(L"page_ready_timeout_ms").c_str()), 500, 120000);
         if (!get(L"extension_id").empty())
             cfg.extensionId = Trim(get(L"extension_id"));
         if (!get(L"update_url").empty())

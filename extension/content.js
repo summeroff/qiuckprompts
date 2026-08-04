@@ -107,6 +107,7 @@ function boot() {
   /**
    * Wait until the same high-scoring composer is observed N times in a row.
    * Avoids pasting into Gemini/Meta load shells that are replaced on hydrate.
+   * Resolves { el, cancelReason }. cancelReason set if tab hidden / left / timed out empty.
    */
   function waitForStableComposer(timeoutMs, opts = {}) {
     const cold = !!opts.cold;
@@ -119,6 +120,11 @@ function boot() {
 
     return new Promise((resolve) => {
       const tick = () => {
+        const abort = pasteAbortReason(opts);
+        if (abort) {
+          resolve({ el: null, cancelReason: abort });
+          return;
+        }
         const el = findComposer();
         if (el) {
           const key = composerKey(el);
@@ -132,7 +138,7 @@ function boot() {
             streak = 1;
           }
           if (streak >= needStable) {
-            resolve(lastEl);
+            resolve({ el: lastEl, cancelReason: null });
             return;
           }
         } else {
@@ -141,7 +147,11 @@ function boot() {
           lastEl = null;
         }
         if (Date.now() - start >= timeoutMs) {
-          resolve(lastEl); // may be null
+          // Never hand back an unstable lastEl on timeout — that defeats stability + cancel.
+          resolve({
+            el: null,
+            cancelReason: 'composer not found (timeout)',
+          });
           return;
         }
         setTimeout(tick, pollMs);
@@ -150,11 +160,36 @@ function boot() {
     });
   }
 
+  /** Abort paste if the user left the tab/window or navigated off the AI origin. */
+  function pasteAbortReason(opts = {}) {
+    // When cancelOnFocusSwitch is explicitly false, skip hide/focus abort (timeout still applies).
+    const cancelFocus = opts.cancelOnFocusSwitch !== false;
+    if (cancelFocus) {
+      try {
+        if (document.hidden || document.visibilityState === 'hidden') {
+          return 'tab hidden / not focused';
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const wantOrigin = opts.wantOrigin ? String(opts.wantOrigin) : '';
+    if (wantOrigin) {
+      try {
+        if (location.origin !== wantOrigin) {
+          return 'navigated off AI origin (' + location.origin + ')';
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return null;
+  }
+
   function textStillPresent(el, text) {
-    const compact = (s) => String(s || '').replace(/\s+/g, '');
-    const pay = compact(text);
+    const pay = compactText(text);
     if (!pay) return true;
-    const got = compact(sniffText(el));
+    const got = compactText(sniffText(el));
     if (!got) return false;
     // Require a meaningful prefix match (full paste may normalize quotes/newlines).
     const probe = pay.slice(0, Math.min(48, pay.length));
@@ -165,11 +200,15 @@ function boot() {
     const ok = await pasteInto(el, text);
     if (!ok) return { ok: false, detail: 'paste failed' };
     // SPA hydrate can wipe a successful DOM write a moment later.
-    await sleep(220);
-    if (textStillPresent(el, text)) {
-      return { ok: true, detail: 'paste verified' };
+    // Lexical may also apply a delayed second insert — wait long enough to see it.
+    await sleep(280);
+    if (!textStillPresent(el, text)) {
+      return { ok: false, detail: 'paste wiped after hydrate' };
     }
-    return { ok: false, detail: 'paste wiped after hydrate' };
+    if (looksDuplicated(el, text)) {
+      return { ok: true, detail: 'paste verified', duplicated: true };
+    }
+    return { ok: true, detail: 'paste verified', duplicated: false };
   }
 
   function escapeHtml(s) {
@@ -184,13 +223,18 @@ function boot() {
     return escapeHtml(text).replace(/\r\n|\n|\r/g, '<br>');
   }
 
-  function fireInput(el, data) {
+  /**
+   * Notify React/controlled hosts of a DOM change.
+   * NEVER use inputType 'insertFromPaste' here after execCommand('insertText') —
+   * Lexical (Meta AI) treats that as a second paste and stacks a collapsed copy.
+   */
+  function fireInput(el, data, inputType = 'insertText') {
     try {
       el.dispatchEvent(
         new InputEvent('input', {
           bubbles: true,
           cancelable: true,
-          inputType: 'insertFromPaste',
+          inputType: inputType || 'insertText',
           data: data ?? null,
         }),
       );
@@ -202,6 +246,46 @@ function boot() {
     } catch {
       /* ignore */
     }
+  }
+
+  function compactText(s) {
+    return String(s || '').replace(/\s+/g, '');
+  }
+
+  /** How many times `needle` appears non-overlapping in `hay`. */
+  function countOccurrences(hay, needle) {
+    if (!needle || needle.length < 8) return 0;
+    let n = 0;
+    let idx = 0;
+    while ((idx = hay.indexOf(needle, idx)) !== -1) {
+      n += 1;
+      idx += needle.length;
+    }
+    return n;
+  }
+
+  function looksDuplicated(el, text) {
+    const pay = compactText(text);
+    if (pay.length < 20) return false;
+    const got = compactText(sniffText(el));
+    if (!got) return false;
+    if (got.includes(pay + pay)) return true;
+    if (countOccurrences(got, pay) >= 2) return true;
+    // Collapsed + full copies: length ~2x with payload prefix present twice-ish.
+    if (got.length >= Math.floor(pay.length * 1.6) && countOccurrences(got, pay.slice(0, 48)) >= 2) {
+      return true;
+    }
+    return false;
+  }
+
+  function looksSingleGood(el, text) {
+    const pay = compactText(text);
+    if (!pay) return true;
+    const got = compactText(sniffText(el));
+    if (!got) return false;
+    if (looksDuplicated(el, text)) return false;
+    const probe = pay.slice(0, Math.min(48, pay.length));
+    return got.includes(probe) && got.length < Math.floor(pay.length * 1.45) + 32;
   }
 
   function setNativeValue(el, text) {
@@ -365,6 +449,10 @@ function boot() {
    * Insert multi-line text exactly once.
    * Important: Lexical/React often apply paste asynchronously and leave innerText
    * empty for a tick — do NOT fall through to other insert methods or we stack copies.
+   *
+   * Meta AI (Lexical): execCommand('insertText') already updates the editor.
+   * Firing a follow-up InputEvent(inputType=insertFromPaste) stacks a second,
+   * often newline-collapsed copy — that is the "prompt twice / half collapsed" bug.
    */
   async function pasteInto(el, text) {
     const value = String(text ?? '');
@@ -373,7 +461,22 @@ function boot() {
     // 1) textarea / input — single value assignment.
     if (setNativeValue(el, value)) return true;
 
-    // 2) Clear, then ONE contenteditable strategy.
+    const isLexical =
+      el.getAttribute('data-lexical-editor') === 'true' ||
+      !!el.closest('[data-lexical-editor="true"]');
+
+    // 2) Lexical hosts: synthetic paste alone (their paste handler owns the model).
+    if (isLexical) {
+      clearComposer(el);
+      await sleep(0);
+      if (dispatchSyntheticPaste(el, value)) {
+        await sleep(40);
+        return true;
+      }
+      // Fall through to insertText without a second input event.
+    }
+
+    // 3) Clear, then ONE contenteditable strategy.
     clearComposer(el);
     await sleep(0);
 
@@ -383,50 +486,81 @@ function boot() {
       if (document.queryCommandSupported && !document.queryCommandSupported('insertText')) {
         /* fall through */
       } else if (document.execCommand('insertText', false, value)) {
-        fireInput(el, value);
+        // Do not fireInput — insertText already mutated the editing host.
+        // Extra insertFromPaste events double-insert on Lexical/Meta.
         return true;
       }
     } catch {
       /* ignore */
     }
 
-    // 3) Synthetic paste only (no further methods after this succeeds at dispatch).
+    // 4) Synthetic paste only (no further methods after this succeeds at dispatch).
     clearComposer(el);
     await sleep(0);
     if (dispatchSyntheticPaste(el, value)) {
-      // Give Lexical a frame to apply; do not chain more inserts.
-      await sleep(30);
+      // Give Lexical a frame to apply; do not chain more inserts / fireInput.
+      await sleep(40);
       return true;
     }
 
-    // 4) insertHTML with <br>
+    // 5) insertHTML with <br>
     clearComposer(el);
     try {
       selectAllIn(el);
       if (document.execCommand('insertHTML', false, plainToHtml(value))) {
-        fireInput(el, value);
+        // insertHTML already applied; mild input notify only if not Lexical.
+        if (!isLexical) fireInput(el, value, 'insertText');
         return true;
       }
     } catch {
       /* ignore */
     }
 
-    // 5) DOM fragment
+    // 6) DOM fragment
     clearComposer(el);
     if (insertMultilineFragment(el, value)) return true;
 
-    // 6) last resort
+    // 7) last resort
     try {
       el.innerHTML = plainToHtml(value);
-      fireInput(el, value);
+      if (!isLexical) fireInput(el, value, 'insertText');
       return true;
     } catch {
       return false;
     }
   }
 
+  /** Clear + single insertText (no fireInput). Used when a duplicate is detected. */
+  async function repairToSingle(el, text) {
+    const value = String(text ?? '');
+    clearComposer(el);
+    await sleep(30);
+    el.focus();
+    selectAllIn(el);
+    let inserted = false;
+    try {
+      inserted = !!document.execCommand('insertText', false, value);
+    } catch {
+      inserted = false;
+    }
+    if (!inserted) {
+      clearComposer(el);
+      await sleep(0);
+      if (dispatchSyntheticPaste(el, value)) {
+        await sleep(40);
+        inserted = true;
+      }
+    }
+    if (!inserted) {
+      clearComposer(el);
+      inserted = insertMultilineFragment(el, value);
+    }
+    await sleep(120);
+    return looksSingleGood(el, value);
+  }
+
   function waitForComposer(timeoutMs) {
-    return waitForStableComposer(timeoutMs, { cold: false });
+    return waitForStableComposer(timeoutMs, { cold: false }).then((r) => r && r.el);
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -442,9 +576,24 @@ function boot() {
         }
         if (msg.cmd === 'findComposer') {
           const cold = !!msg.cold;
-          const el = await waitForStableComposer(Math.max(500, Number(msg.timeoutMs) || 15000), {
+          const wantOrigin = msg.wantOrigin ? String(msg.wantOrigin) : '';
+          const cancelOnFocusSwitch = msg.cancelOnFocusSwitch !== false;
+          // Cap form wait at 10s unless caller asked for less.
+          const timeoutMs = Math.min(10000, Math.max(500, Number(msg.timeoutMs) || 10000));
+          const waited = await waitForStableComposer(timeoutMs, {
             cold,
+            wantOrigin,
+            cancelOnFocusSwitch,
           });
+          if (waited && waited.cancelReason) {
+            sendResponse({
+              ok: false,
+              error: waited.cancelReason,
+              href: location.href,
+            });
+            return;
+          }
+          const el = waited && waited.el;
           sendResponse({
             ok: !!el,
             detail: el ? `found ${el.tagName} score-stable` : 'no composer',
@@ -453,17 +602,45 @@ function boot() {
           return;
         }
         if (msg.cmd === 'waitAndPaste') {
-          const timeoutMs = Math.max(500, Number(msg.timeoutMs) || 15000);
+          // Default/hard cap 10s so a stuck form never pastes later on the wrong page.
+          const timeoutMs = Math.min(10000, Math.max(500, Number(msg.timeoutMs) || 10000));
           const cold = !!msg.cold;
+          const wantOrigin = msg.wantOrigin ? String(msg.wantOrigin) : '';
+          const cancelOnFocusSwitch = msg.cancelOnFocusSwitch !== false;
           const text = String(msg.text ?? '');
           const nl = (text.match(/\r\n|\n|\r/g) || []).length;
           const t0 = Date.now();
+          const opts = { cold, wantOrigin, cancelOnFocusSwitch };
 
-          let el = await waitForStableComposer(timeoutMs, { cold });
+          let waited = await waitForStableComposer(timeoutMs, opts);
+          if (waited && waited.cancelReason) {
+            sendResponse({
+              ok: false,
+              error: waited.cancelReason,
+              href: location.href,
+              cold,
+              waitedMs: Date.now() - t0,
+            });
+            return;
+          }
+          let el = waited && waited.el;
           if (!el) {
             sendResponse({
               ok: false,
-              error: 'composer not found',
+              error: 'composer not found (timeout)',
+              href: location.href,
+              cold,
+              waitedMs: Date.now() - t0,
+            });
+            return;
+          }
+
+          // Re-check focus right before mutating the form.
+          const preAbort = pasteAbortReason(opts);
+          if (preAbort) {
+            sendResponse({
+              ok: false,
+              error: preAbort,
               href: location.href,
               cold,
               waitedMs: Date.now() - t0,
@@ -474,32 +651,94 @@ function boot() {
           let result = await pasteWithVerify(el, text);
           // One retry after wipe/hydrate (common on cold Gemini open).
           if (!result.ok) {
-            const remain = Math.max(800, timeoutMs - (Date.now() - t0));
-            await sleep(cold ? 500 : 250);
-            el = await waitForStableComposer(remain, { cold: true });
+            let remain = Math.max(0, timeoutMs - (Date.now() - t0));
+            if (remain < 400) {
+              sendResponse({
+                ok: false,
+                error: result.detail || 'paste failed (no time to retry)',
+                href: location.href,
+                cold,
+                waitedMs: Date.now() - t0,
+              });
+              return;
+            }
+            const midAbort = pasteAbortReason(opts);
+            if (midAbort) {
+              sendResponse({
+                ok: false,
+                error: midAbort,
+                href: location.href,
+                cold,
+                waitedMs: Date.now() - t0,
+              });
+              return;
+            }
+            const settle = Math.min(cold ? 500 : 250, remain - 100);
+            if (settle > 0) await sleep(settle);
+            // Recompute budget after settle — never exceed the hard timeout.
+            remain = Math.max(0, timeoutMs - (Date.now() - t0));
+            if (remain < 200) {
+              sendResponse({
+                ok: false,
+                error: result.detail || 'paste failed (timeout after settle)',
+                href: location.href,
+                cold,
+                waitedMs: Date.now() - t0,
+              });
+              return;
+            }
+            waited = await waitForStableComposer(remain, {
+              cold: true,
+              wantOrigin,
+              cancelOnFocusSwitch,
+            });
+            if (waited && waited.cancelReason) {
+              sendResponse({
+                ok: false,
+                error: waited.cancelReason,
+                href: location.href,
+                cold,
+                waitedMs: Date.now() - t0,
+              });
+              return;
+            }
+            el = waited && waited.el;
             if (el) result = await pasteWithVerify(el, text);
           }
 
-          const after = el ? sniffText(el) : '';
-          const compact = (s) => String(s).replace(/\s+/g, '');
-          const cPay = compact(text);
-          const cAfter = compact(after);
           let detail = result.ok
             ? `pasted ${text.length} chars newlines=${nl} ${result.detail || ''}`.trim()
             : result.detail || 'paste failed';
-          if (result.ok && cPay.length > 20 && cAfter.includes(cPay + cPay)) {
+
+          // Meta/Lexical sometimes still stacks two copies (one collapsed). Detect + repair
+          // without firing insertFromPaste again (that re-introduces the double).
+          if (result.ok && el && (result.duplicated || looksDuplicated(el, text))) {
             detail += ' WARN:duplicate_detected';
-            clearComposer(el);
-            await sleep(0);
-            try {
-              selectAllIn(el);
-              document.execCommand('insertText', false, text);
-              fireInput(el, text);
+            const repaired = await repairToSingle(el, text);
+            if (repaired) {
               detail += '+repaired';
-            } catch {
-              /* ignore */
+            } else {
+              // Second hard attempt after a short settle.
+              await sleep(150);
+              const repaired2 = await repairToSingle(el, text);
+              detail += repaired2 ? '+repaired' : '+repair_failed';
+              // Any failed second repair must fail the op (blank/truncated is not OK either).
+              if (!repaired2) {
+                clearComposer(el);
+                result = { ok: false, detail: 'duplicate paste could not be repaired' };
+                detail = result.detail;
+              }
             }
           }
+
+          // Final sniff: reject still-duplicated content even if earlier steps claimed OK.
+          if (result.ok && el && looksDuplicated(el, text)) {
+            detail += ' WARN:still_duplicated';
+            clearComposer(el);
+            result = { ok: false, detail: 'paste left duplicated content' };
+            detail = result.detail;
+          }
+
           if (cold) detail += ' cold=1';
           detail += ` waitedMs=${Date.now() - t0}`;
 

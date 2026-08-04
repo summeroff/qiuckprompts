@@ -98,6 +98,63 @@ bool LooksLikeNewTabTitle(const std::wstring& title)
     return false;
 }
 
+bool IsAncestorOrSelf(HWND ancestor, HWND hwnd)
+{
+    if (!ancestor || !hwnd)
+        return false;
+    for (HWND w = hwnd; w; w = GetParent(w))
+    {
+        if (w == ancestor)
+            return true;
+    }
+    return false;
+}
+
+// User left the AI target: other app focused, or same browser but title no longer matches hint.
+// Returns empty if still OK; otherwise a short cancel reason for logs/errors.
+std::wstring FocusSwitchCancelReason(HWND browserHwnd, const std::wstring& titleHint,
+                                     bool sawTargetTitle)
+{
+    if (!browserHwnd || !IsWindow(browserHwnd))
+        return L"browser window disappeared";
+
+    const std::wstring browserTitle = WindowTitleOf(browserHwnd);
+    // Tab switched away inside the same browser window after we had already seen the AI title.
+    if (sawTargetTitle && !titleHint.empty() && !LooksLikeNewTabTitle(browserTitle) &&
+        !ContainsI(browserTitle, titleHint))
+    {
+        return L"focus/title switched off AI page (browser title='" + browserTitle + L"')";
+    }
+
+    HWND fg = GetForegroundWindow();
+    if (!fg)
+        return {};
+
+    if (IsAncestorOrSelf(browserHwnd, fg) || fg == browserHwnd)
+        return {};
+
+    DWORD fgPid = 0;
+    DWORD brPid = 0;
+    GetWindowThreadProcessId(fg, &fgPid);
+    GetWindowThreadProcessId(browserHwnd, &brPid);
+
+    const std::wstring fgTitle = WindowTitleOf(fg);
+
+    // Different process entirely (Hermes, Slack, game, …).
+    if (fgPid != 0 && brPid != 0 && fgPid != brPid)
+    {
+        return L"focus switched to other window title='" + fgTitle + L"'";
+    }
+
+    // Same browser process, other window/tab in foreground without our AI hint.
+    if (!titleHint.empty() && !ContainsI(fgTitle, titleHint) && !LooksLikeNewTabTitle(fgTitle))
+    {
+        return L"focus switched to other tab/window title='" + fgTitle + L"'";
+    }
+
+    return {};
+}
+
 bool IsOmniboxName(const std::wstring& name)
 {
     const std::wstring l = ToLowerCopy(name);
@@ -455,6 +512,7 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
 
     bool titleReady = false;
     bool editReady = false;
+    bool sawTargetTitle = false;
     std::wstring lastTitle;
     std::wstring prevLoggedTitle;
     int lastTreeScanMs = -10000;
@@ -477,9 +535,31 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
             return false;
         }
 
+        if (cfg.cancelOnFocusSwitch)
+        {
+            const std::wstring focusErr =
+                FocusSwitchCancelReason(cfg.browserHwnd, cfg.titleHint, sawTargetTitle);
+            if (!focusErr.empty())
+            {
+                if (automation)
+                    automation->Release();
+                out.ready = false;
+                out.detail = focusErr;
+                out.title = WindowTitleOf(cfg.browserHwnd);
+                out.waitedMs = elapsed;
+                QP_LOG_WARN(L"page_ready: CANCEL %s (t=%dms)", focusErr.c_str(), elapsed);
+                LogTitleSample(L"page_ready_focus_cancel", cfg.browserHwnd, focusErr);
+                if (error)
+                    *error = focusErr;
+                return false;
+            }
+        }
+
         lastTitle = WindowTitleOf(cfg.browserHwnd);
         out.title = lastTitle;
         titleReady = TitleLooksReady(lastTitle, cfg.titleHint);
+        if (titleReady)
+            sawTargetTitle = true;
 
         // Log every title *change*, and at least every ~1s while waiting.
         if (lastTitle != prevLoggedTitle || elapsed - lastTitleLogMs >= 1000)

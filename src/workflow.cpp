@@ -41,6 +41,109 @@ bool LooksLikeBrowserClass(const std::wstring& cls)
            cls == L"MozillaWindowClass";
 }
 
+bool ContainsI(const std::wstring& hay, const std::wstring& needle)
+{
+    if (needle.empty())
+        return true;
+    auto lower = [](std::wstring s) {
+        for (auto& c : s)
+            c = static_cast<wchar_t>(towlower(c));
+        return s;
+    };
+    return lower(hay).find(lower(needle)) != std::wstring::npos;
+}
+
+// Extension/UIA failures that mean "abort entirely" — do not surprise-paste via fallback.
+bool IsHardPasteCancel(const std::wstring& msg)
+{
+    if (msg.empty())
+        return false;
+    static const wchar_t* kKeys[] = {
+        L"focus switched",
+        L"focus/title switched",
+        L"not focused",
+        L"tab inactive",
+        L"tab hidden",
+        L"document hidden",
+        L"cancelled",
+        L"canceled",
+        L"composer not found",
+        L"timed out",
+        L"timeout",
+        L"page not ready",
+        L"paste left duplicated",
+        L"could not be repaired",
+    };
+    for (const wchar_t* k : kKeys)
+    {
+        if (ContainsI(msg, k))
+            return true;
+    }
+    return false;
+}
+
+std::wstring WindowTitleHwnd(HWND hwnd)
+{
+    if (!hwnd || !IsWindow(hwnd))
+        return {};
+    wchar_t buf[512]{};
+    GetWindowTextW(hwnd, buf, 512);
+    return buf;
+}
+
+// Pre-paste guard for UIA path: FG must still be the AI browser/tab.
+bool ForegroundOkForPaste(HWND browserHwnd, const std::wstring& titleHint, std::wstring* why)
+{
+    if (!browserHwnd || !IsWindow(browserHwnd))
+    {
+        if (why)
+            *why = L"browser window disappeared before paste";
+        return false;
+    }
+    HWND fg = GetForegroundWindow();
+    if (!fg)
+        return true;
+
+    auto isUnder = [](HWND ancestor, HWND hwnd) {
+        for (HWND w = hwnd; w; w = GetParent(w))
+        {
+            if (w == ancestor)
+                return true;
+        }
+        return false;
+    };
+
+    const std::wstring brTitle = WindowTitleHwnd(browserHwnd);
+    if (!titleHint.empty() && !ContainsI(brTitle, titleHint))
+    {
+        // Allow bare browser chrome while loading is rare at paste time — still cancel.
+        if (why)
+            *why = L"focus/title switched off AI page (browser title='" + brTitle + L"')";
+        return false;
+    }
+
+    if (fg == browserHwnd || isUnder(browserHwnd, fg))
+        return true;
+
+    DWORD fgPid = 0, brPid = 0;
+    GetWindowThreadProcessId(fg, &fgPid);
+    GetWindowThreadProcessId(browserHwnd, &brPid);
+    const std::wstring fgTitle = WindowTitleHwnd(fg);
+    if (fgPid != 0 && brPid != 0 && fgPid != brPid)
+    {
+        if (why)
+            *why = L"focus switched to other window title='" + fgTitle + L"'";
+        return false;
+    }
+    if (!titleHint.empty() && !ContainsI(fgTitle, titleHint))
+    {
+        if (why)
+            *why = L"focus switched to other tab/window title='" + fgTitle + L"'";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 AiWorkflow::AiWorkflow(const WorkflowConfig& cfg) : cfg_(cfg)
@@ -185,9 +288,11 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
         QP_LOG_INFO(L"workflow: trying Chrome extension prepareAndPaste");
         std::wstring detail;
         std::wstring extErr;
+        // Cap at page-ready timeout (default 10s). No +5s cushion — long waits → surprise paste.
         const DWORD extTimeout =
-            static_cast<DWORD>((std::max)(cfg_.pageReadyTimeoutMs, 5000) + 5000);
-        if (ExtBridge::Instance().PrepareAndPaste(url, payload, extTimeout, &detail, &extErr))
+            static_cast<DWORD>((std::max)(1000, (std::min)(cfg_.pageReadyTimeoutMs, 60000)));
+        if (ExtBridge::Instance().PrepareAndPaste(url, payload, extTimeout, &detail, &extErr,
+                                                  cfg_.cancelOnFocusSwitch))
         {
             QP_LOG_INFO(L"workflow: extension paste OK (%s)", detail.c_str());
             // Extension set the composer via DOM — no clipboard hold required for SPA race.
@@ -198,8 +303,14 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
             QP_LOG_INFO(L"workflow: DONE (extension)");
             return true;
         }
-        QP_LOG_WARN(L"workflow: extension path failed (%s) — falling back to UIA",
-                    extErr.empty() ? detail.c_str() : extErr.c_str());
+        const std::wstring why = !extErr.empty() ? extErr : detail;
+        // Timeout / focus-leave / missing form: abort. Do not UIA-paste onto whatever is focused.
+        if (IsHardPasteCancel(why))
+        {
+            restoreClip();
+            return fail(L"extension paste cancelled: " + why);
+        }
+        QP_LOG_WARN(L"workflow: extension path failed (%s) — falling back to UIA", why.c_str());
     } else if (cfg_.preferExtension)
     {
         QP_LOG_DEBUG(L"workflow: extension not connected — UIA path");
@@ -274,15 +385,18 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
     pr.minWaitMs = cfg_.pageReadyMinMs;
     pr.settleMs = cfg_.pageReadySettleMs;
     pr.useUia = cfg_.pageReadyUseUia;
+    pr.cancelOnFocusSwitch = cfg_.cancelOnFocusSwitch;
 
-    QP_LOG_INFO(L"workflow: page-ready hint='%s'", pr.titleHint.c_str());
+    QP_LOG_INFO(L"workflow: page-ready hint='%s' timeout=%dms cancelOnFocus=%d",
+                pr.titleHint.c_str(), pr.timeoutMs, pr.cancelOnFocusSwitch ? 1 : 0);
     PageReadyResult ready{};
     std::wstring readyErr;
     const bool isReady = WaitForAiPageReady(pr, ready, &readyErr);
     if (!isReady)
     {
         QP_LOG_WARN(L"workflow: page not ready (%s)", readyErr.c_str());
-        if (!cfg_.pasteEvenIfNotReady)
+        // Focus-switch / hard cancel always aborts even if pasteEvenIfNotReady is on.
+        if (!cfg_.pasteEvenIfNotReady || IsHardPasteCancel(readyErr))
         {
             restoreClip();
             return fail(readyErr.empty() ? L"page not ready" : readyErr);
@@ -297,6 +411,16 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
     Sleep(40);
     ReleaseModifiers(nullptr);
     WaitModifiersReleased(200);
+
+    if (cfg_.cancelOnFocusSwitch)
+    {
+        std::wstring focusWhy;
+        if (!ForegroundOkForPaste(browser.hwnd, pr.titleHint, &focusWhy))
+        {
+            restoreClip();
+            return fail(focusWhy.empty() ? L"focus switched before paste" : focusWhy);
+        }
+    }
 
     // --- Paste into AI form ---
     // Clipboard+Ctrl+V keeps newlines/formatting (human-readable).

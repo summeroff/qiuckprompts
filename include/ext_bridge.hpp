@@ -34,8 +34,10 @@ public:
               std::wstring* error = nullptr);
 
     // Convenience: prepare tab + paste text via extension.
+    // cancelOnFocusSwitch: when true (default), extension aborts if tab/window loses focus.
     bool PrepareAndPaste(const std::wstring& url, const std::wstring& text, DWORD timeoutMs,
-                         std::wstring* detail, std::wstring* error = nullptr);
+                         std::wstring* detail, std::wstring* error = nullptr,
+                         bool cancelOnFocusSwitch = true);
 
     bool Ping(DWORD timeoutMs = 1500);
 
