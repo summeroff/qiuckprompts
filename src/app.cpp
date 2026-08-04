@@ -664,6 +664,9 @@ int App::RunSelfTest()
     expect(!wc.defaultAiUrl.empty(), L"default AI URL set");
     expect(!wc.browserTitleHint.empty(), L"browser hint set");
     expect(wc.pageReadyTimeoutMs > 0, L"pageReadyTimeoutMs > 0");
+    expect(wc.pageReadyTimeoutMs <= 10000, L"default pageReadyTimeoutMs <= 10s");
+    expect(wc.pasteEvenIfNotReady == false, L"default pasteEvenIfNotReady off");
+    expect(wc.cancelOnFocusSwitch == true, L"default cancelOnFocusSwitch on");
     expect(wc.fenceEditorText == true, L"default fenceEditorText on");
 
     {

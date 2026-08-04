@@ -16,7 +16,7 @@ struct PageReadyConfig
     // Blank/new-tab titles are rejected in page_ready.cpp::LooksLikeNewTabTitle.
     std::wstring titleHint;
 
-    int timeoutMs = 15000; // hard stop
+    int timeoutMs = 10000; // hard stop — cancel paste rather than wait forever
     int pollMs = 150;      // poll interval
     int minWaitMs = 400;   // never paste sooner than this after Enter
     int settleMs = 200;    // after ready signal, tiny settle before paste
@@ -24,6 +24,8 @@ struct PageReadyConfig
     bool useUia = true; // UI Automation tree (sees web edits; not real HWNDs)
     bool preferFocusedEdit = true;
     bool focusFoundEdit = true;
+    // If the user leaves the target browser / AI tab while waiting, abort paste.
+    bool cancelOnFocusSwitch = true;
 };
 
 struct PageReadyResult

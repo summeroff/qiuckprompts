@@ -82,12 +82,16 @@ struct WorkflowConfig
     int afterFinalPasteMs = 300;
     int afterImagePasteMs = 350;
 
-    int pageReadyTimeoutMs = 15000;
+    // Hard stop waiting for AI composer / page. After this we cancel (no surprise paste).
+    int pageReadyTimeoutMs = 10000;
     int pageReadyPollMs = 150;
     int pageReadyMinMs = 500;
     int pageReadySettleMs = 200;
     bool pageReadyUseUia = true;
-    bool pasteEvenIfNotReady = true;
+    // If false (default): timeout / missing form aborts — do not paste into a half-ready page.
+    bool pasteEvenIfNotReady = false;
+    // Abort when the user switches away (other app / other tab title) while waiting to paste.
+    bool cancelOnFocusSwitch = true;
     bool fenceEditorText = true;
 
     // Extra delay after final paste before restoring the user's clipboard.
