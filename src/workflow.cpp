@@ -291,7 +291,8 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
         // Cap at page-ready timeout (default 10s). No +5s cushion — long waits → surprise paste.
         const DWORD extTimeout =
             static_cast<DWORD>((std::max)(1000, (std::min)(cfg_.pageReadyTimeoutMs, 60000)));
-        if (ExtBridge::Instance().PrepareAndPaste(url, payload, extTimeout, &detail, &extErr))
+        if (ExtBridge::Instance().PrepareAndPaste(url, payload, extTimeout, &detail, &extErr,
+                                                  cfg_.cancelOnFocusSwitch))
         {
             QP_LOG_INFO(L"workflow: extension paste OK (%s)", detail.c_str());
             // Extension set the composer via DOM — no clipboard hold required for SPA race.

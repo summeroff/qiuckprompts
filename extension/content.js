@@ -147,9 +147,10 @@ function boot() {
           lastEl = null;
         }
         if (Date.now() - start >= timeoutMs) {
+          // Never hand back an unstable lastEl on timeout — that defeats stability + cancel.
           resolve({
-            el: lastEl,
-            cancelReason: lastEl ? null : 'composer not found (timeout)',
+            el: null,
+            cancelReason: 'composer not found (timeout)',
           });
           return;
         }
@@ -161,12 +162,16 @@ function boot() {
 
   /** Abort paste if the user left the tab/window or navigated off the AI origin. */
   function pasteAbortReason(opts = {}) {
-    try {
-      if (document.hidden || document.visibilityState === 'hidden') {
-        return 'tab hidden / not focused';
+    // When cancelOnFocusSwitch is explicitly false, skip hide/focus abort (timeout still applies).
+    const cancelFocus = opts.cancelOnFocusSwitch !== false;
+    if (cancelFocus) {
+      try {
+        if (document.hidden || document.visibilityState === 'hidden') {
+          return 'tab hidden / not focused';
+        }
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
     }
     const wantOrigin = opts.wantOrigin ? String(opts.wantOrigin) : '';
     if (wantOrigin) {
@@ -572,9 +577,14 @@ function boot() {
         if (msg.cmd === 'findComposer') {
           const cold = !!msg.cold;
           const wantOrigin = msg.wantOrigin ? String(msg.wantOrigin) : '';
+          const cancelOnFocusSwitch = msg.cancelOnFocusSwitch !== false;
           // Cap form wait at 10s unless caller asked for less.
           const timeoutMs = Math.min(10000, Math.max(500, Number(msg.timeoutMs) || 10000));
-          const waited = await waitForStableComposer(timeoutMs, { cold, wantOrigin });
+          const waited = await waitForStableComposer(timeoutMs, {
+            cold,
+            wantOrigin,
+            cancelOnFocusSwitch,
+          });
           if (waited && waited.cancelReason) {
             sendResponse({
               ok: false,
@@ -596,13 +606,14 @@ function boot() {
           const timeoutMs = Math.min(10000, Math.max(500, Number(msg.timeoutMs) || 10000));
           const cold = !!msg.cold;
           const wantOrigin = msg.wantOrigin ? String(msg.wantOrigin) : '';
+          const cancelOnFocusSwitch = msg.cancelOnFocusSwitch !== false;
           const text = String(msg.text ?? '');
           const nl = (text.match(/\r\n|\n|\r/g) || []).length;
           const t0 = Date.now();
-          const opts = { cold, wantOrigin };
+          const opts = { cold, wantOrigin, cancelOnFocusSwitch };
 
           let waited = await waitForStableComposer(timeoutMs, opts);
-          if (waited && waited.cancelReason && !waited.el) {
+          if (waited && waited.cancelReason) {
             sendResponse({
               ok: false,
               error: waited.cancelReason,
@@ -640,7 +651,7 @@ function boot() {
           let result = await pasteWithVerify(el, text);
           // One retry after wipe/hydrate (common on cold Gemini open).
           if (!result.ok) {
-            const remain = Math.max(0, timeoutMs - (Date.now() - t0));
+            let remain = Math.max(0, timeoutMs - (Date.now() - t0));
             if (remain < 400) {
               sendResponse({
                 ok: false,
@@ -662,12 +673,26 @@ function boot() {
               });
               return;
             }
-            await sleep(cold ? 500 : 250);
-            waited = await waitForStableComposer(Math.max(400, remain - 500), {
+            const settle = Math.min(cold ? 500 : 250, remain - 100);
+            if (settle > 0) await sleep(settle);
+            // Recompute budget after settle — never exceed the hard timeout.
+            remain = Math.max(0, timeoutMs - (Date.now() - t0));
+            if (remain < 200) {
+              sendResponse({
+                ok: false,
+                error: result.detail || 'paste failed (timeout after settle)',
+                href: location.href,
+                cold,
+                waitedMs: Date.now() - t0,
+              });
+              return;
+            }
+            waited = await waitForStableComposer(remain, {
               cold: true,
               wantOrigin,
+              cancelOnFocusSwitch,
             });
-            if (waited && waited.cancelReason && !waited.el) {
+            if (waited && waited.cancelReason) {
               sendResponse({
                 ok: false,
                 error: waited.cancelReason,
@@ -697,8 +722,8 @@ function boot() {
               await sleep(150);
               const repaired2 = await repairToSingle(el, text);
               detail += repaired2 ? '+repaired' : '+repair_failed';
-              if (!repaired2 && looksDuplicated(el, text)) {
-                // Last resort: clear so user does not send a doubled prompt by accident.
+              // Any failed second repair must fail the op (blank/truncated is not OK either).
+              if (!repaired2) {
                 clearComposer(el);
                 result = { ok: false, detail: 'duplicate paste could not be repaired' };
                 detail = result.detail;

@@ -590,13 +590,14 @@ bool ExtBridge::Ping(DWORD timeoutMs)
 }
 
 bool ExtBridge::PrepareAndPaste(const std::wstring& url, const std::wstring& text, DWORD timeoutMs,
-                                std::wstring* detail, std::wstring* error)
+                                std::wstring* detail, std::wstring* error, bool cancelOnFocusSwitch)
 {
     const std::string urlU = WideToUtf8(url);
     const std::string textU = WideToUtf8(text);
     std::ostringstream oss;
     oss << "{\"cmd\":\"prepareAndPaste\",\"url\":\"" << JsonEscape(urlU) << "\",\"text\":\""
-        << JsonEscape(textU) << "\",\"timeoutMs\":" << static_cast<unsigned long>(timeoutMs) << "}";
+        << JsonEscape(textU) << "\",\"timeoutMs\":" << static_cast<unsigned long>(timeoutMs)
+        << ",\"cancelOnFocusSwitch\":" << (cancelOnFocusSwitch ? "true" : "false") << "}";
 
     std::string resp;
     if (!Call(oss.str(), resp, timeoutMs + 2000, error))

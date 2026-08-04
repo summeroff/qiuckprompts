@@ -176,11 +176,10 @@ async function sendToTab(tabId, message, attempts = 16, deadlineMs = 0) {
   return { ok: false, error: lastErr };
 }
 
-async function tabStillActiveOnOrigin(tabId, wantOrigin) {
+async function tabStillActiveOnOrigin(tabId, wantOrigin, cancelOnFocusSwitch = true) {
   try {
     const t = await chrome.tabs.get(tabId);
     if (!t) return { ok: false, error: 'tab gone' };
-    if (t.active === false) return { ok: false, error: 'tab inactive / focus switched' };
     if (wantOrigin && t.url) {
       try {
         if (new URL(t.url).origin !== wantOrigin) {
@@ -188,6 +187,20 @@ async function tabStillActiveOnOrigin(tabId, wantOrigin) {
         }
       } catch {
         /* ignore bad url */
+      }
+    }
+    if (!cancelOnFocusSwitch) return { ok: true };
+
+    // Tab.active only means selected in its window — still true if another app has OS focus.
+    if (t.active === false) return { ok: false, error: 'tab inactive / focus switched' };
+    if (t.windowId != null) {
+      try {
+        const w = await chrome.windows.get(t.windowId);
+        if (w && w.focused === false) {
+          return { ok: false, error: 'browser window not focused' };
+        }
+      } catch {
+        /* ignore — some hosts deny windows.get */
       }
     }
     return { ok: true };
@@ -211,6 +224,8 @@ async function onNativeMessage(msg) {
       const text = String(msg.text || '');
       // Hard cap 10s for form wait — matches product rule: cancel rather than surprise-paste.
       const timeoutMs = Math.min(10000, Math.max(1000, Number(msg.timeoutMs) || 10000));
+      // Default true; tray can pass cancelOnFocusSwitch:false to disable focus leave cancel.
+      const cancelOnFocusSwitch = msg.cancelOnFocusSwitch !== false;
       if (!url) {
         reply(msg, { ok: false, error: 'missing url' });
         return;
@@ -229,7 +244,7 @@ async function onNativeMessage(msg) {
       } else {
         await sleep(250);
       }
-      const focusCheck = await tabStillActiveOnOrigin(tabId, wantOrigin);
+      const focusCheck = await tabStillActiveOnOrigin(tabId, wantOrigin, cancelOnFocusSwitch);
       if (!focusCheck.ok) {
         reply(msg, {
           ok: false,
@@ -247,12 +262,13 @@ async function onNativeMessage(msg) {
           timeoutMs: Math.min(timeoutMs, remain),
           cold: !!cold,
           wantOrigin,
+          cancelOnFocusSwitch,
         },
         16,
         deadline,
       );
       // Final guard: if user left while content script worked, still report cancel.
-      const after = await tabStillActiveOnOrigin(tabId, wantOrigin);
+      const after = await tabStillActiveOnOrigin(tabId, wantOrigin, cancelOnFocusSwitch);
       if (resp && resp.ok && !after.ok) {
         reply(msg, {
           ok: false,
@@ -275,6 +291,7 @@ async function onNativeMessage(msg) {
     if (msg.cmd === 'prepare') {
       const url = String(msg.url || '');
       const timeoutMs = Math.min(10000, Math.max(1000, Number(msg.timeoutMs) || 10000));
+      const cancelOnFocusSwitch = msg.cancelOnFocusSwitch !== false;
       let wantOrigin = '';
       try {
         wantOrigin = new URL(url).origin;
@@ -285,7 +302,7 @@ async function onNativeMessage(msg) {
       const { tabId, cold } = await ensureTab(url);
       if (cold) await sleep(900);
       else await sleep(250);
-      const focusCheck = await tabStillActiveOnOrigin(tabId, wantOrigin);
+      const focusCheck = await tabStillActiveOnOrigin(tabId, wantOrigin, cancelOnFocusSwitch);
       if (!focusCheck.ok) {
         reply(msg, { ok: false, error: focusCheck.error || 'tab inactive', cold: !!cold });
         return;
@@ -293,7 +310,13 @@ async function onNativeMessage(msg) {
       const remain = Math.max(500, deadline - Date.now());
       const resp = await sendToTab(
         tabId,
-        { cmd: 'findComposer', timeoutMs: Math.min(timeoutMs, remain), cold: !!cold, wantOrigin },
+        {
+          cmd: 'findComposer',
+          timeoutMs: Math.min(timeoutMs, remain),
+          cold: !!cold,
+          wantOrigin,
+          cancelOnFocusSwitch,
+        },
         16,
         deadline,
       );
