@@ -81,6 +81,7 @@ private:
     bool companionChecked_ = false;
     bool companionWarned_ = false;
     std::wstring companionVersion_;
+    int workTestSleepMs_ = 0; // self-test: skip inject/workflow, just Sleep
 };
 
 } // namespace qp

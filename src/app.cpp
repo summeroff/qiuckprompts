@@ -244,9 +244,11 @@ void App::StopWorkThread()
         SetEvent(workStop_);
     if (workThread_)
     {
-        const DWORD wr = WaitForSingleObject(workThread_, 20000);
-        if (wr == WAIT_TIMEOUT || wr == WAIT_FAILED)
-            TerminateThread(workThread_, 1);
+        // Wait for the current job to finish. Never TerminateThread — the worker
+        // may own workMutex_, logger, clipboard, or COM.
+        const DWORD wr = WaitForSingleObject(workThread_, INFINITE);
+        if (wr == WAIT_FAILED)
+            QP_LOG_ERROR(L"work thread wait failed: %s", LastErrorMessage().c_str());
         CloseHandle(workThread_);
         workThread_ = nullptr;
     }
@@ -277,6 +279,15 @@ bool App::QueueHotkeyWork(const HotkeyBinding& binding)
 
 void App::RunHotkeyWork(const HotkeyBinding& binding)
 {
+    if (workTestSleepMs_ > 0)
+    {
+        Sleep(static_cast<DWORD>(workTestSleepMs_));
+        std::lock_guard<std::mutex> lock(workMutex_);
+        workOk_ = true;
+        workErr_.clear();
+        workTemplateId_ = binding.templateId;
+        return;
+    }
     EnsureComInitialized();
     std::wstring err;
     bool ok = false;
@@ -1021,6 +1032,59 @@ int App::RunSelfTest()
     const std::wstring logFile = PathJoin(logDir, L"self-test.log");
     Logger::Instance().Init(logFile, LogLevel::Trace, true);
     QP_LOG_INFO(L"self-test log line");
+
+    {
+        App app;
+        app.instance_ = GetModuleHandleW(nullptr);
+        app.workTestSleepMs_ = 40;
+        std::wstring werr;
+        expect(app.CreateMessageWindow(&werr), L"work test CreateMessageWindow");
+        expect(app.StartWorkThread(&werr), L"work test StartWorkThread");
+        app.StopWorkThread();
+        expect(true, L"work test stop idle");
+
+        expect(app.StartWorkThread(&werr), L"work test restart");
+        HotkeyBinding job;
+        job.templateId = L"self_test_work";
+        job.promptBody = L"noop";
+        app.hotkeys_.SetBusy(true);
+        expect(app.QueueHotkeyWork(job), L"work test queue");
+        bool gotDone = false;
+        const DWORD t0 = GetTickCount();
+        while (GetTickCount() - t0 < 4000)
+        {
+            MSG msg{};
+            while (PeekMessageW(&msg, app.hwnd_, 0, 0, PM_REMOVE))
+            {
+                if (msg.message == WM_QP_WORK_DONE)
+                {
+                    app.OnWorkDone();
+                    gotDone = true;
+                } else
+                {
+                    DispatchMessageW(&msg);
+                }
+            }
+            if (gotDone)
+                break;
+            Sleep(10);
+        }
+        expect(gotDone, L"work test completion posted");
+        expect(!app.hotkeys_.Busy(), L"work test busy cleared");
+
+        app.hotkeys_.SetBusy(true);
+        app.workTestSleepMs_ = 200;
+        expect(app.QueueHotkeyWork(job), L"work test queue active");
+        app.StopWorkThread();
+        expect(!app.QueueHotkeyWork(job), L"work test queue after stop fails");
+        if (app.hwnd_)
+        {
+            DestroyWindow(app.hwnd_);
+            app.hwnd_ = nullptr;
+        }
+        wprintf(L"[ OK ] work thread queue/complete/stop\n");
+    }
+
     Logger::Instance().Shutdown();
     expect(FileExists(logFile), L"log file created");
 
