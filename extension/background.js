@@ -1,27 +1,15 @@
 // QiuckPrompts companion — service worker: native messaging + tab orchestration.
 
+import './paste_logic.js';
+
 const HOST = 'com.qiuckprompts.host';
 
-// Keep in sync with extension/manifest.json host_permissions.
-const ALLOWED_AI_ORIGINS = new Set([
-  'https://www.meta.ai',
-  'https://meta.ai',
-  'https://gemini.google.com',
-  'https://grok.com',
-  'https://x.com',
-  'https://chatgpt.com',
-  'https://claude.ai',
-  'https://www.perplexity.ai',
-  'https://copilot.microsoft.com',
-]);
-
 function isAllowedAiUrl(url) {
-  try {
-    const u = new URL(String(url || ''));
-    return u.protocol === 'https:' && ALLOWED_AI_ORIGINS.has(u.origin);
-  } catch {
-    return false;
-  }
+  return globalThis.qpPaste.isAllowedAiUrl(url);
+}
+
+function isAlreadyOnApp(u, want) {
+  return globalThis.qpPaste.isAlreadyOnApp(u, want);
 }
 
 let port = null;
@@ -111,27 +99,6 @@ function waitTabComplete(tabId, timeoutMs = 25000) {
 }
 
 /**
- * True when the existing tab is already on the target AI app.
- * Do NOT re-navigate merely because query/hash/conversation id differ — that
- * forced cold=1 on every Meta/Gemini hotkey and re-hydrated the composer.
- *
- * Rules:
- * - origin must match
- * - want path "/" (meta.ai/, chatgpt.com/): any path on that origin is fine
- * - otherwise accept exact path or prefix (gemini /app → /app/xyz)
- */
-function isAlreadyOnApp(u, want) {
-  if (u.origin !== want.origin) return false;
-  let wantPath = want.pathname || '/';
-  if (wantPath.length > 1 && wantPath.endsWith('/')) wantPath = wantPath.slice(0, -1);
-  if (wantPath === '/' || wantPath === '') return true;
-  const path = u.pathname || '/';
-  if (path === wantPath) return true;
-  const prefix = wantPath.endsWith('/') ? wantPath : wantPath + '/';
-  return path.startsWith(prefix);
-}
-
-/**
  * Focus or open a tab for url.
  * Returns { tabId, cold } where cold=true if we created a tab or navigated.
  */
@@ -184,7 +151,7 @@ async function sendToTab(tabId, message, attempts = 16, deadlineMs = 0) {
         try {
           await chrome.scripting.executeScript({
             target: { tabId, allFrames: false },
-            files: ['content.js'],
+            files: ['paste_logic.js', 'content.js'],
           });
         } catch (inj) {
           lastErr = String(inj);

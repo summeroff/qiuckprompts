@@ -38,7 +38,7 @@
         "https://www.perplexity.ai/*",
         "https://copilot.microsoft.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["paste_logic.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

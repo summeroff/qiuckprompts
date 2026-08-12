@@ -40,7 +40,7 @@ struct ComInit
 
 ComInit& Com()
 {
-    static ComInit c;
+    thread_local ComInit c;
     return c;
 }
 

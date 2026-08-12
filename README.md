@@ -218,8 +218,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for branch/PR workflow and release checkl
 See [CODING_STYLE.md](CODING_STYLE.md). Braces are Allman-style (`{` on its own line); `} else {` stays joined. CI runs `clang-format`.
 
 ```bat
-scriptsormat.bat          :: apply
-scriptsormat.bat --check  :: CI-style check
+scripts\format.bat          :: apply
+scripts\format.bat --check  :: CI-style check
+```
+
+Extension paste helpers:
+
+```bat
+node --test tests\paste_logic.test.cjs
 ```
 
 ## Contributing
@@ -236,6 +242,8 @@ Use feature branches and squash-merge PRs into `master` — details in [CONTRIBU
 | `src/workflow.cpp` | Send-to-AI pipeline (extension → UIA fallback) |
 | `src/ext_bridge.cpp` | Named pipe + native-messaging host relay |
 | `extension/` | MV3 companion (DOM composer paste) |
+| `extension/paste_logic.js` | Shared paste/URL helpers (Node + content + background) |
+| `tests/paste_logic.test.cjs` | Node unit tests for those helpers |
 | `src/browser.cpp` | Find / activate browser window |
 | `src/page_ready.cpp` | Title + UI Automation wait |
 | `src/title_sample.cpp` | `TITLE_SAMPLE` → `titles.log` |
@@ -261,6 +269,7 @@ Lines are tagged `TITLE_SAMPLE` with stable `where=` fields.
 - User data lives under **`%LOCALAPPDATA%\QiuckPrompts`** so installers/updates cannot clobber config or logs.
 - Chrome does **not** expose the chat box as a Win32 `HWND`. Prefer the **MV3 companion** (DOM); readiness otherwise uses the **UI Automation** tree plus the tab title.
 - Hotkeys **arm on press** and **run on release** so Ctrl/Alt are up before Select-all/Copy/Paste.
+- Send-to-AI / insert-only run on a **worker thread**; the tray message loop stays responsive. COM/UIA is initialized per-thread.
 - Hidden top-level HWND (not `HWND_MESSAGE`) so a second launch can FindWindow + take over.
 - Binding `url=` and `update_url=` must be `https://`. The updater refuses HTTPS→HTTP redirects.
 

@@ -54,7 +54,7 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out,
 bool UiaFindChatEdit(HWND browserHwnd, std::wstring* editName, bool setFocus,
                      std::wstring* error = nullptr);
 
-// Process-wide COM init for UIA (safe to call multiple times).
+// Per-thread COM init for UIA (safe to call multiple times on each thread).
 bool EnsureComInitialized();
 
 } // namespace qp

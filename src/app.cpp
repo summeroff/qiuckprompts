@@ -26,6 +26,7 @@ App* g_app = nullptr;
 
 App::~App()
 {
+    StopWorkThread();
     ExtBridge::Instance().Stop();
     tray_.Destroy();
     hotkeys_.UnregisterAll();
@@ -77,8 +78,13 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         OnMenuCommand(static_cast<UINT>(LOWORD(wParam)));
         return 0;
 
+    case WM_QP_WORK_DONE:
+        OnWorkDone();
+        return 0;
+
     case WM_CLOSE:
         // Tray Exit and second-instance takeover both land here.
+        StopWorkThread();
         DestroyWindow(hwnd);
         return 0;
 
@@ -164,26 +170,113 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding)
     QP_LOG_INFO(L"hotkey fired: %s (%s) -> template '%s' action=%s", binding.hotkey.display.c_str(),
                 binding.label.c_str(), binding.templateId.c_str(), ActionKindName(binding.action));
 
-    // Capture titles at the moment the action starts (source editor, etc.)
     LogForegroundTitle(L"hotkey_fire", binding.hotkey.display);
     LogBrowserTitleSweep(L"hotkey_fire_sweep");
 
-    std::wstring body = binding.promptBody;
-    if (body.empty())
+    if (binding.promptBody.empty())
     {
         QP_LOG_ERROR(L"empty prompt for binding '%s'", binding.name.c_str());
         hotkeys_.SetBusy(false);
         return;
     }
 
-    const ActionKind action = cfg_.forceInsertOnly ? ActionKind::InsertTemplate : binding.action;
+    HotkeyBinding work = binding;
+    if (cfg_.forceInsertOnly)
+        work.action = ActionKind::InsertTemplate;
 
+    if (!QueueHotkeyWork(work))
+    {
+        QP_LOG_WARN(L"hotkey: worker unavailable — running on UI thread");
+        RunHotkeyWork(work);
+        OnWorkDone();
+    }
+}
+
+bool App::StartWorkThread(std::wstring* error)
+{
+    if (workThread_)
+        return true;
+    workStopping_ = false;
+    workStop_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    workWake_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!workStop_ || !workWake_)
+    {
+        if (error)
+            *error = L"CreateEvent(work) failed: " + LastErrorMessage();
+        if (workStop_)
+        {
+            CloseHandle(workStop_);
+            workStop_ = nullptr;
+        }
+        if (workWake_)
+        {
+            CloseHandle(workWake_);
+            workWake_ = nullptr;
+        }
+        return false;
+    }
+    workThread_ = CreateThread(nullptr, 0, WorkThreadMain, this, 0, nullptr);
+    if (!workThread_)
+    {
+        if (error)
+            *error = L"CreateThread(work) failed: " + LastErrorMessage();
+        CloseHandle(workStop_);
+        CloseHandle(workWake_);
+        workStop_ = nullptr;
+        workWake_ = nullptr;
+        return false;
+    }
+    QP_LOG_INFO(L"work thread started");
+    return true;
+}
+
+void App::StopWorkThread()
+{
+    workStopping_ = true;
+    if (workStop_)
+        SetEvent(workStop_);
+    if (workThread_)
+    {
+        const DWORD wr = WaitForSingleObject(workThread_, 20000);
+        if (wr == WAIT_TIMEOUT || wr == WAIT_FAILED)
+            TerminateThread(workThread_, 1);
+        CloseHandle(workThread_);
+        workThread_ = nullptr;
+    }
+    if (workWake_)
+    {
+        CloseHandle(workWake_);
+        workWake_ = nullptr;
+    }
+    if (workStop_)
+    {
+        CloseHandle(workStop_);
+        workStop_ = nullptr;
+    }
+}
+
+bool App::QueueHotkeyWork(const HotkeyBinding& binding)
+{
+    if (!workThread_ || !workWake_ || workStopping_.load())
+        return false;
+    {
+        std::lock_guard<std::mutex> lock(workMutex_);
+        workBinding_ = binding;
+        workHasItem_ = true;
+    }
+    SetEvent(workWake_);
+    return true;
+}
+
+void App::RunHotkeyWork(const HotkeyBinding& binding)
+{
+    EnsureComInitialized();
     std::wstring err;
     bool ok = false;
-    if (action == ActionKind::SendToAi)
+    if (binding.action == ActionKind::SendToAi)
     {
         WorkflowRequest req;
-        req.promptBody = body;
+        req.promptBody = binding.promptBody;
         req.aiUrl = binding.aiUrl;
         req.pageTitleHint = binding.pageTitleHint;
         req.captureEditor = binding.captureEditor;
@@ -194,19 +287,56 @@ void App::OnHotkey(int /*id*/, const HotkeyBinding& binding)
         ok = workflow_.Run(req, &err);
     } else
     {
-        ok = injector_.Inject(body, &err);
+        ok = injector_.Inject(binding.promptBody, &err);
     }
-
-    if (!ok)
     {
-        QP_LOG_ERROR(L"action failed for '%s': %s", binding.templateId.c_str(), err.c_str());
+        std::lock_guard<std::mutex> lock(workMutex_);
+        workOk_ = ok;
+        workErr_ = err;
+        workTemplateId_ = binding.templateId;
     }
+}
 
-    // After workflow: what is focused / browser titles look like now?
-    LogForegroundTitle(L"hotkey_done", binding.templateId);
+void App::OnWorkDone()
+{
+    bool ok = false;
+    std::wstring err;
+    std::wstring id;
+    {
+        std::lock_guard<std::mutex> lock(workMutex_);
+        ok = workOk_;
+        err = workErr_;
+        id = workTemplateId_;
+    }
+    if (!ok)
+        QP_LOG_ERROR(L"action failed for '%s': %s", id.c_str(), err.c_str());
+    LogForegroundTitle(L"hotkey_done", id);
     LogBrowserTitleSweep(L"hotkey_done_sweep");
-
     hotkeys_.SetBusy(false);
+}
+
+DWORD WINAPI App::WorkThreadMain(void* self)
+{
+    auto* app = static_cast<App*>(self);
+    HANDLE waits[2] = {app->workStop_, app->workWake_};
+    for (;;)
+    {
+        const DWORD wr = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
+        if (wr == WAIT_OBJECT_0 || wr == WAIT_FAILED)
+            break;
+        HotkeyBinding binding;
+        {
+            std::lock_guard<std::mutex> lock(app->workMutex_);
+            if (!app->workHasItem_)
+                continue;
+            binding = app->workBinding_;
+            app->workHasItem_ = false;
+        }
+        app->RunHotkeyWork(binding);
+        if (!app->workStopping_.load() && app->hwnd_)
+            PostMessageW(app->hwnd_, WM_QP_WORK_DONE, 0, 0);
+    }
+    return 0;
 }
 
 void App::OnMenuCommand(UINT cmd)
@@ -579,6 +709,12 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         return 3;
     }
 
+    if (!StartWorkThread(&err))
+    {
+        QP_LOG_WARN(L"work thread not started: %s — hotkeys will run on UI thread", err.c_str());
+        err.clear();
+    }
+
     // Named shutdown event → PostMessage(WM_CLOSE) when another build takes over.
     if (!single_.StartShutdownWatcher(hwnd_, &err))
     {
@@ -671,6 +807,7 @@ int App::RunSelfTest()
     expect(ac.hotkeyTrigger == HotkeyTriggerMode::OnRelease, L"default OnRelease");
     expect(ac.hotkeyReleaseTimeoutMs > 0, L"release timeout default");
     expect(ac.logLevel == LogLevel::Info, L"default log level Info");
+    expect(App::WM_QP_WORK_DONE >= WM_APP, L"WM_QP_WORK_DONE in WM_APP range");
 
     expect(IsHttpsUrl(L"https://www.meta.ai/"), L"IsHttpsUrl meta");
     expect(IsHttpsUrl(L"HTTPS://gemini.google.com/app"), L"IsHttpsUrl case");
