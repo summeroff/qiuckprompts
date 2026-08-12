@@ -15,14 +15,15 @@ Pure **Win32 + C++17**. No third-party libraries. Built to debug, trace, and ext
 - **Fire on key release** so modifiers are up before automation runs
 - Send-to-AI workflow:
   1. Select-all + copy from the focused editor  
-  2. Activate Chrome (Dev/Beta/stable) / Edge  
-  3. New tab → open AI URL (default [meta.ai](https://www.meta.ai/))  
+  2. Prefer **Chrome MV3 companion** (DOM paste into the composer)  
+  3. Fallback: activate Chrome (Dev/Beta/stable) / Edge → new tab → AI URL  
   4. Adaptive wait (window title + **UI Automation** chat input)  
   5. Paste `prompt + editor text`  
   6. Restore clipboard  
 - Insert-only mode (paste template into the current field)
 - File + debugger logging; optional `titles.log` for mining real window titles
-- Templates / hotkeys in `include/config.hpp` (file config planned later)
+- Bindings live in `%LOCALAPPDATA%\QiuckPrompts\qiuckprompts.ini` (seed: `config/qiuckprompts.ini`)
+- Binding / update URLs must be `https://`
 
 
 ## Configuration file
@@ -31,7 +32,8 @@ Pure **Win32 + C++17**. No third-party libraries. Built to debug, trace, and ext
 Seeded on first run from the install template (`<exe>\config\qiuckprompts.ini`).  
 Updates never overwrite the user file. Backups live in `%LOCALAPPDATA%\QiuckPrompts\backups\`.
 
-**Logs:** `%LOCALAPPDATA%\QiuckPrompts\logs\` (`qiuckprompts.log`, `titles.log`; rotated ~5 MiB × 4 files).
+**Logs:** `%LOCALAPPDATA%\QiuckPrompts\logs\` (`qiuckprompts.log`, `titles.log`; rotated ~5 MiB × 4 files).  
+Default `log_level=info` (length only). Payload / clipboard / editor previews are **debug/trace** — they can contain secrets.
 
 Tray → **Open config** / **Open data folder**. Override path: `--config=D:\path\qiuckprompts.ini`
 
@@ -124,12 +126,13 @@ build\Debug\qiuckprompts.exe --self-test
 | Flag | Meaning |
 |------|---------|
 | `--console` | Live logs on a console |
-| `--log-level=LEVEL` | `trace` \| `debug` \| `info` \| `warn` \| `error` |
+| `--log-level=LEVEL` | `trace` \| `debug` \| `info` \| `warn` \| `error` (default **info**) |
 | `--log-file=PATH` | Override log path |
-| `--ai-url=URL` | Default AI chat URL |
+| `--ai-url=URL` | Default AI chat URL (**https:// only**) |
+| `--update-url=URL` | Velopack feed directory (**https:// only**) |
 | `--browser-hint=TEXT` | Prefer matching window/path (default `Chrome Dev`) |
 | `--page-title-hint=TEXT` | Title must contain this (auto from URL if empty) |
-| `--page-ready-timeout=MS` | Max wait for page/input (default 15000) |
+| `--page-ready-timeout=MS` | Max wait for page/input (default 10000) |
 | `--page-ready-min=MS` | Min wait after navigate (default 500) |
 | `--no-uia` | Title-only wait (disable UI Automation) |
 | `--no-extension` | Skip Chrome companion; UIA-only path |
@@ -227,7 +230,9 @@ Use feature branches and squash-merge PRs into `master` — details in [CONTRIBU
 
 | Path | Role |
 |------|------|
-| `include/config.hpp` | Templates, hotkeys, workflow knobs |
+| `config/qiuckprompts.ini` | Shipped template (hotkeys + prompts). Live copy is AppData. |
+| `%LOCALAPPDATA%\QiuckPrompts\` | User config, logs, backups, NM host, stable extension |
+| `include/config.hpp` | Built-in fallback bindings + workflow knobs |
 | `src/workflow.cpp` | Send-to-AI pipeline (extension → UIA fallback) |
 | `src/ext_bridge.cpp` | Named pipe + native-messaging host relay |
 | `extension/` | MV3 companion (DOM composer paste) |
@@ -247,7 +252,7 @@ For tuning `pageTitleHint` / browser matching:
 1. Run the app  
 2. Open AI tabs in Chrome  
 3. Tray → **Sample window titles now**  
-4. Tray → **Open titles.log** → `build\Debug\logs\titles.log`  
+4. Tray → **Open titles.log** → `%LOCALAPPDATA%\QiuckPrompts\logs\titles.log`  
 
 Lines are tagged `TITLE_SAMPLE` with stable `where=` fields.
 
@@ -256,7 +261,8 @@ Lines are tagged `TITLE_SAMPLE` with stable `where=` fields.
 - User data lives under **`%LOCALAPPDATA%\QiuckPrompts`** so installers/updates cannot clobber config or logs.
 - Chrome does **not** expose the chat box as a Win32 `HWND`. Prefer the **MV3 companion** (DOM); readiness otherwise uses the **UI Automation** tree plus the tab title.
 - Hotkeys **arm on press** and **run on release** so Ctrl/Alt are up before Select-all/Copy/Paste.
-- No Qt/WPF/Electron — message-only window + tray only.
+- Hidden top-level HWND (not `HWND_MESSAGE`) so a second launch can FindWindow + take over.
+- Binding `url=` and `update_url=` must be `https://`. The updater refuses HTTPS→HTTP redirects.
 
 ## License
 

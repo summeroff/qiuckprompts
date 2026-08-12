@@ -113,7 +113,7 @@ struct WorkflowConfig
 struct AppConfig
 {
     std::wstring logPath;
-    LogLevel logLevel = LogLevel::Debug;
+    LogLevel logLevel = LogLevel::Info;
     bool console = false;
     int pasteDelayMs = 200;
     WorkflowConfig workflow;

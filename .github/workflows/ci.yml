@@ -27,12 +27,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install clang-format
+      - name: Install clang-format 18
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format
+          sudo apt-get install -y clang-format-18
 
       - name: Check formatting
+        env:
+          CLANG_FORMAT: clang-format-18
         run: |
           chmod +x scripts/format.sh
           ./scripts/format.sh --check
@@ -122,7 +124,17 @@ jobs:
           if (Test-Path "README.md") { Copy-Item "README.md" "$dir/" }
           if (Test-Path "LICENSE")   { Copy-Item "LICENSE"   "$dir/" }
           if (Test-Path "config")    { Copy-Item "config" "$dir/config" -Recurse }
-          if (Test-Path "extension") { Copy-Item "extension" "$dir/extension" -Recurse }
+          # Prefer POST_BUILD-stamped companion; fall back to repo then stamp to tag X.Y.Z.
+          if (Test-Path "build/RelWithDebInfo/extension") {
+            Copy-Item "build/RelWithDebInfo/extension" "$dir/extension" -Recurse
+          } elseif (Test-Path "extension") {
+            Copy-Item "extension" "$dir/extension" -Recurse
+          }
+          if (Test-Path "$dir/extension/manifest.json") {
+            $ver = "${{ steps.ver.outputs.version }}"
+            & cmake "-DQP_EXT_DIR=$dir/extension" "-DQP_EXT_VERSION=$ver" -P "cmake/stamp_extension_version.cmake"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           Compress-Archive -Path "$dir/*" -DestinationPath "$name.zip" -Force
           Get-Item "$name.zip" | Format-List Name, Length, FullName
 

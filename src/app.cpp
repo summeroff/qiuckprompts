@@ -512,8 +512,19 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
                 cfg_.startWithWindows = false;
                 cliForceAutostartOff = true;
             }
+            const std::wstring arg = argv[i];
+            const std::wstring logPref = L"--log-level=";
+            if (arg.rfind(logPref, 0) == 0)
+            {
+                cfg_.logLevel = Logger::ParseLevel(arg.substr(logPref.size()));
+            } else if (arg == L"--log-level" && i + 1 < argc && argv[i + 1])
+            {
+                cfg_.logLevel = Logger::ParseLevel(argv[++i]);
+            }
         }
     }
+    Logger::Instance().SetLevel(cfg_.logLevel);
+    QP_LOG_INFO(L"log level effective=%s", Logger::LevelName(cfg_.logLevel));
 
     // Autostart (HKCU Run):
     //  - CLI --start-with-windows / --no-start-with-windows always apply
@@ -588,7 +599,7 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         MessageBoxW(nullptr,
                     (L"Failed to register hotkeys:\n" + err +
                      L"\n\nAnother app may own these chords. "
-                     L"Edit GetBuiltInBindings() in config.hpp and rebuild.")
+                     L"Edit %LOCALAPPDATA%\\QiuckPrompts\\qiuckprompts.ini and restart.")
                         .c_str(),
                     QP_APP_DISPLAY_W, MB_OK | MB_ICONWARNING);
         // Continue running so user can still open About / Exit from tray.
@@ -659,9 +670,42 @@ int App::RunSelfTest()
     AppConfig ac;
     expect(ac.hotkeyTrigger == HotkeyTriggerMode::OnRelease, L"default OnRelease");
     expect(ac.hotkeyReleaseTimeoutMs > 0, L"release timeout default");
+    expect(ac.logLevel == LogLevel::Info, L"default log level Info");
+
+    expect(IsHttpsUrl(L"https://www.meta.ai/"), L"IsHttpsUrl meta");
+    expect(IsHttpsUrl(L"HTTPS://gemini.google.com/app"), L"IsHttpsUrl case");
+    expect(!IsHttpsUrl(L"http://www.meta.ai/"), L"IsHttpsUrl rejects http");
+    expect(!IsHttpsUrl(L"javascript:alert(1)"), L"IsHttpsUrl rejects javascript");
+    expect(!IsHttpsUrl(L"file:///c:/x"), L"IsHttpsUrl rejects file");
+    expect(!IsHttpsUrl(L"https://"), L"IsHttpsUrl rejects empty host");
+    expect(!IsHttpsUrl(L"https://:443/path"), L"IsHttpsUrl rejects empty host :443");
+    expect(!IsHttpsUrl(L" https://www.meta.ai/"), L"IsHttpsUrl rejects leading space");
+    expect(!IsHttpsUrl(L"https://www.meta.ai/ "), L"IsHttpsUrl rejects trailing space");
+    expect(IsHttpsUrl(L"https://[::1]/"), L"IsHttpsUrl ipv6");
+    expect(!IsHttpsUrl(L""), L"IsHttpsUrl empty");
+
+    {
+        AppConfig cli;
+        std::wstring e;
+        wchar_t* fakeHttp[] = {const_cast<wchar_t*>(L"qiuckprompts.exe"),
+                               const_cast<wchar_t*>(L"--ai-url=http://evil.example/")};
+        expect(!ParseCommandLine(2, fakeHttp, cli, &e), L"ParseCommandLine rejects http --ai-url");
+        e.clear();
+        wchar_t* fakeOk[] = {const_cast<wchar_t*>(L"qiuckprompts.exe"),
+                             const_cast<wchar_t*>(L"--ai-url=https://gemini.google.com/app")};
+        expect(ParseCommandLine(2, fakeOk, cli, &e) && IsHttpsUrl(cli.workflow.defaultAiUrl),
+               L"ParseCommandLine accepts https --ai-url");
+        e.clear();
+        wchar_t* fakePad[] = {const_cast<wchar_t*>(L"qiuckprompts.exe"),
+                              const_cast<wchar_t*>(L"--ai-url= https://gemini.google.com/app")};
+        expect(ParseCommandLine(2, fakePad, cli, &e) &&
+                   cli.workflow.defaultAiUrl == L"https://gemini.google.com/app",
+               L"ParseCommandLine trims padded --ai-url");
+    }
 
     WorkflowConfig wc;
     expect(!wc.defaultAiUrl.empty(), L"default AI URL set");
+    expect(IsHttpsUrl(wc.defaultAiUrl), L"default AI URL is https");
     expect(!wc.browserTitleHint.empty(), L"browser hint set");
     expect(wc.pageReadyTimeoutMs > 0, L"pageReadyTimeoutMs > 0");
     expect(wc.pageReadyTimeoutMs <= 10000, L"default pageReadyTimeoutMs <= 10s");

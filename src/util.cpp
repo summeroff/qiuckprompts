@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cwctype>
 #include <vector>
 
 namespace qp
@@ -406,6 +407,33 @@ std::wstring Trim(const std::wstring& s)
     while (e > b && iswspace(s[e - 1]))
         --e;
     return s.substr(b, e - b);
+}
+
+bool IsHttpsUrl(const std::wstring& url)
+{
+    if (url.empty() || url != Trim(url))
+        return false;
+    constexpr size_t kPrefixLen = 8;
+    if (url.size() <= kPrefixLen)
+        return false;
+    if (_wcsnicmp(url.c_str(), L"https://", kPrefixLen) != 0)
+        return false;
+    for (wchar_t c : url)
+    {
+        if (c < 32 || c == L' ' || c == L'\t')
+            return false;
+    }
+    size_t i = kPrefixLen;
+    const size_t slash = url.find_first_of(L"/?#", i);
+    const size_t at = url.find(L'@', i);
+    if (at != std::wstring::npos && (slash == std::wstring::npos || at < slash))
+        i = at + 1;
+    if (i >= url.size() || (slash != std::wstring::npos && i >= slash))
+        return false;
+    const wchar_t host0 = url[i];
+    if (!(iswalnum(host0) || host0 == L'['))
+        return false;
+    return true;
 }
 
 std::wstring ToLower(const std::wstring& s)

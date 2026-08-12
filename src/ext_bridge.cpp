@@ -47,7 +47,42 @@ struct PipeSecurity
     }
 
     SECURITY_ATTRIBUTES* Attrs() { return sd ? &sa : nullptr; }
+    bool Ok() const { return sd != nullptr; }
 };
+
+std::wstring CanonicalPath(const std::wstring& path)
+{
+    if (path.empty())
+        return {};
+    wchar_t buf[32768]{};
+    const DWORD n = GetFullPathNameW(path.c_str(), static_cast<DWORD>(sizeof(buf) / sizeof(buf[0])),
+                                     buf, nullptr);
+    if (n == 0 || n >= static_cast<DWORD>(sizeof(buf) / sizeof(buf[0])))
+        return path;
+    return buf;
+}
+
+// Named-pipe clients must be this same exe (tray dummy connect or --native-messaging-host).
+bool PipeClientIsSelf(HANDLE pipe)
+{
+    ULONG pid = 0;
+    if (!GetNamedPipeClientProcessId(pipe, &pid) || pid == 0)
+        return false;
+    if (pid == GetCurrentProcessId())
+        return true;
+    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!proc)
+        return false;
+    wchar_t img[32768]{};
+    DWORD n = static_cast<DWORD>(sizeof(img) / sizeof(img[0]));
+    const BOOL ok = QueryFullProcessImageNameW(proc, 0, img, &n);
+    CloseHandle(proc);
+    if (!ok || img[0] == L'\0')
+        return false;
+    const std::wstring want = CanonicalPath(GetExePath());
+    const std::wstring got = CanonicalPath(img);
+    return !want.empty() && !got.empty() && _wcsicmp(want.c_str(), got.c_str()) == 0;
+}
 
 bool ReadExact(HANDLE h, void* buf, DWORD n, DWORD timeoutMs)
 {
@@ -339,6 +374,16 @@ bool ExtBridge::Start(std::wstring* error)
     if (running_.load())
         return true;
 
+    {
+        PipeSecurity probe;
+        if (!probe.Ok())
+        {
+            if (error)
+                *error = L"pipe SDDL setup failed — refusing open named pipe";
+            return false;
+        }
+    }
+
     stopEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!stopEvent_)
     {
@@ -415,6 +460,12 @@ DWORD WINAPI ExtBridge::ServerThreadMain(void* self)
 void ExtBridge::ServerLoop()
 {
     PipeSecurity pipeSec;
+    if (!pipeSec.Ok())
+    {
+        QP_LOG_ERROR(L"ext_bridge: pipe SDDL failed — not creating an open pipe");
+        running_ = false;
+        return;
+    }
     while (running_.load())
     {
         HANDLE pipe = CreateNamedPipeW(QP_EXT_BRIDGE_PIPE_W, PIPE_ACCESS_DUPLEX,
@@ -438,6 +489,14 @@ void ExtBridge::ServerLoop()
 
         if (!connected)
         {
+            CloseHandle(pipe);
+            continue;
+        }
+
+        if (!PipeClientIsSelf(pipe))
+        {
+            QP_LOG_WARN(L"ext_bridge: rejected pipe client (not this exe)");
+            DisconnectNamedPipe(pipe);
             CloseHandle(pipe);
             continue;
         }

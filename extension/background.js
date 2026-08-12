@@ -2,6 +2,28 @@
 
 const HOST = 'com.qiuckprompts.host';
 
+// Keep in sync with extension/manifest.json host_permissions.
+const ALLOWED_AI_ORIGINS = new Set([
+  'https://www.meta.ai',
+  'https://meta.ai',
+  'https://gemini.google.com',
+  'https://grok.com',
+  'https://x.com',
+  'https://chatgpt.com',
+  'https://claude.ai',
+  'https://www.perplexity.ai',
+  'https://copilot.microsoft.com',
+]);
+
+function isAllowedAiUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    return u.protocol === 'https:' && ALLOWED_AI_ORIGINS.has(u.origin);
+  } catch {
+    return false;
+  }
+}
+
 let port = null;
 let reconnectTimer = null;
 
@@ -230,6 +252,10 @@ async function onNativeMessage(msg) {
         reply(msg, { ok: false, error: 'missing url' });
         return;
       }
+      if (!isAllowedAiUrl(url)) {
+        reply(msg, { ok: false, error: 'url must be https on a known AI origin' });
+        return;
+      }
       let wantOrigin = '';
       try {
         wantOrigin = new URL(url).origin;
@@ -292,6 +318,10 @@ async function onNativeMessage(msg) {
       const url = String(msg.url || '');
       const timeoutMs = Math.min(10000, Math.max(1000, Number(msg.timeoutMs) || 10000));
       const cancelOnFocusSwitch = msg.cancelOnFocusSwitch !== false;
+      if (!isAllowedAiUrl(url)) {
+        reply(msg, { ok: false, error: 'url must be https on a known AI origin' });
+        return;
+      }
       let wantOrigin = '';
       try {
         wantOrigin = new URL(url).origin;
