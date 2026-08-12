@@ -8,6 +8,12 @@ if (globalThis.__qiuckpromptsContentLoaded) {
 }
 
 function boot() {
+  const P = globalThis.qpPaste;
+  if (!P) {
+    console.error('[qiuckprompts] paste_logic.js missing');
+    return;
+  }
+
   const COMPOSER_SELECTORS = [
     '[contenteditable="true"]',
     'div[role="textbox"]',
@@ -187,13 +193,7 @@ function boot() {
   }
 
   function textStillPresent(el, text) {
-    const pay = compactText(text);
-    if (!pay) return true;
-    const got = compactText(sniffText(el));
-    if (!got) return false;
-    // Require a meaningful prefix match (full paste may normalize quotes/newlines).
-    const probe = pay.slice(0, Math.min(48, pay.length));
-    return got.includes(probe);
+    return P.textStillPresentText(sniffText(el), text);
   }
 
   async function pasteWithVerify(el, text) {
@@ -211,17 +211,8 @@ function boot() {
     return { ok: true, detail: 'paste verified', duplicated: false };
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  function plainToHtml(text) {
-    return escapeHtml(text).replace(/\r\n|\n|\r/g, '<br>');
-  }
+  const escapeHtml = P.escapeHtml;
+  const plainToHtml = P.plainToHtml;
 
   /**
    * Notify React/controlled hosts of a DOM change.
@@ -248,44 +239,12 @@ function boot() {
     }
   }
 
-  function compactText(s) {
-    return String(s || '').replace(/\s+/g, '');
-  }
-
-  /** How many times `needle` appears non-overlapping in `hay`. */
-  function countOccurrences(hay, needle) {
-    if (!needle || needle.length < 8) return 0;
-    let n = 0;
-    let idx = 0;
-    while ((idx = hay.indexOf(needle, idx)) !== -1) {
-      n += 1;
-      idx += needle.length;
-    }
-    return n;
-  }
-
   function looksDuplicated(el, text) {
-    const pay = compactText(text);
-    if (pay.length < 20) return false;
-    const got = compactText(sniffText(el));
-    if (!got) return false;
-    if (got.includes(pay + pay)) return true;
-    if (countOccurrences(got, pay) >= 2) return true;
-    // Collapsed + full copies: length ~2x with payload prefix present twice-ish.
-    if (got.length >= Math.floor(pay.length * 1.6) && countOccurrences(got, pay.slice(0, 48)) >= 2) {
-      return true;
-    }
-    return false;
+    return P.looksDuplicatedText(sniffText(el), text);
   }
 
   function looksSingleGood(el, text) {
-    const pay = compactText(text);
-    if (!pay) return true;
-    const got = compactText(sniffText(el));
-    if (!got) return false;
-    if (looksDuplicated(el, text)) return false;
-    const probe = pay.slice(0, Math.min(48, pay.length));
-    return got.includes(probe) && got.length < Math.floor(pay.length * 1.45) + 32;
+    return P.looksSingleGoodText(sniffText(el), text);
   }
 
   function setNativeValue(el, text) {

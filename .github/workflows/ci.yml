@@ -2,6 +2,7 @@
 #
 # Jobs:
 #   format — clang-format dry-run against .clang-format (Allman braces, } else { ok)
+#   js     — Node unit tests for extension paste helpers
 #   build  — VS 2022 Debug + --self-test; Velopack Setup + zip on tags v*
 #
 # Version: local/PR/untagged CI → CMake default 0.0.0-dev.
@@ -39,9 +40,19 @@ jobs:
           chmod +x scripts/format.sh
           ./scripts/format.sh --check
 
+  js:
+    name: Extension unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node tests
+        run: node --test tests/paste_logic.test.cjs
+
   build:
     name: Build & test (Windows x64)
-    needs: format
+    needs: [format, js]
     runs-on: windows-2022
 
     permissions:

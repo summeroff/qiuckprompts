@@ -9,6 +9,10 @@
 #include "util.hpp"
 #include "workflow.hpp"
 
+#include <atomic>
+#include <mutex>
+#include <string>
+
 namespace qp
 {
 
@@ -24,6 +28,9 @@ public:
     int Run(HINSTANCE instance, int argc, wchar_t** argv);
     static int RunSelfTest();
 
+    // Posted by the workflow worker when a hotkey action finishes.
+    static constexpr UINT WM_QP_WORK_DONE = WM_APP + 2;
+
 private:
     static LRESULT CALLBACK StaticWndProc(HWND, UINT, WPARAM, LPARAM);
     LRESULT WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -37,6 +44,18 @@ private:
     void ShowAbout();
     void ShowHotkeyList();
 
+    bool StartWorkThread(std::wstring* error);
+    void StopWorkThread();
+    bool QueueHotkeyWork(const HotkeyBinding& binding);
+    void RunHotkeyWork(const HotkeyBinding& binding);
+    void OnWorkDone();
+    void MaybeCheckCompanionVersion();
+    void WarnCompanionMismatch();
+    static DWORD WINAPI WorkThreadMain(void* self);
+
+    static constexpr UINT_PTR kCompanionVerTimerId = 2;
+    static constexpr int kCompanionVerMaxTries = 30;
+
     HINSTANCE instance_ = nullptr;
     HWND hwnd_ = nullptr;
     AppConfig cfg_;
@@ -46,6 +65,23 @@ private:
     TrayIcon tray_;
     SingleInstance single_;
     std::wstring logPath_;
+
+    HANDLE workStop_ = nullptr;
+    HANDLE workWake_ = nullptr;
+    HANDLE workThread_ = nullptr;
+    std::mutex workMutex_;
+    HotkeyBinding workBinding_;
+    bool workHasItem_ = false;
+    bool workOk_ = false;
+    std::wstring workErr_;
+    std::wstring workTemplateId_;
+    std::atomic<bool> workStopping_{false};
+
+    int companionVerTries_ = 0;
+    bool companionChecked_ = false;
+    bool companionWarned_ = false;
+    std::wstring companionVersion_;
+    int workTestSleepMs_ = 0; // self-test: skip inject/workflow, just Sleep
 };
 
 } // namespace qp
