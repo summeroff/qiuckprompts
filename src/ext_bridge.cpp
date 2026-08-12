@@ -640,10 +640,17 @@ bool ExtBridge::Call(const std::string& requestJson, std::string& responseJson, 
 
 bool ExtBridge::Ping(DWORD timeoutMs)
 {
+    return Ping(timeoutMs, nullptr);
+}
+
+bool ExtBridge::Ping(DWORD timeoutMs, std::string* versionOut)
+{
     std::string resp;
     std::wstring err;
     if (!Call("{\"cmd\":\"ping\"}", resp, timeoutMs, &err))
         return false;
+    if (versionOut)
+        JsonGetString(resp, "version", *versionOut);
     bool ok = false;
     return JsonGetBool(resp, "ok", ok) && ok;
 }

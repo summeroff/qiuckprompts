@@ -71,6 +71,11 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 0;
 
     case WM_TIMER:
+        if (wParam == kCompanionVerTimerId)
+        {
+            MaybeCheckCompanionVersion();
+            return 0;
+        }
         hotkeys_.OnTimer(wParam);
         return 0;
 
@@ -84,6 +89,8 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_CLOSE:
         // Tray Exit and second-instance takeover both land here.
+        if (hwnd)
+            KillTimer(hwnd, kCompanionVerTimerId);
         StopWorkThread();
         DestroyWindow(hwnd);
         return 0;
@@ -313,6 +320,62 @@ void App::OnWorkDone()
     LogForegroundTitle(L"hotkey_done", id);
     LogBrowserTitleSweep(L"hotkey_done_sweep");
     hotkeys_.SetBusy(false);
+    MaybeCheckCompanionVersion();
+}
+
+void App::MaybeCheckCompanionVersion()
+{
+    if (companionChecked_ || !cfg_.workflow.preferExtension)
+    {
+        if (hwnd_)
+            KillTimer(hwnd_, kCompanionVerTimerId);
+        return;
+    }
+
+    if (!ExtBridge::Instance().IsExtensionReady())
+    {
+        ++companionVerTries_;
+        if (companionVerTries_ >= kCompanionVerMaxTries && hwnd_)
+            KillTimer(hwnd_, kCompanionVerTimerId);
+        return;
+    }
+
+    std::string verU;
+    if (!ExtBridge::Instance().Ping(800, &verU))
+    {
+        ++companionVerTries_;
+        if (companionVerTries_ >= kCompanionVerMaxTries && hwnd_)
+            KillTimer(hwnd_, kCompanionVerTimerId);
+        return;
+    }
+
+    companionChecked_ = true;
+    if (hwnd_)
+        KillTimer(hwnd_, kCompanionVerTimerId);
+
+    companionVersion_ = Utf8ToWide(verU);
+    QP_LOG_INFO(L"companion version=%s app=%s", companionVersion_.c_str(), PeVersionXyz().c_str());
+    if (!CompanionVersionMatches(companionVersion_))
+        WarnCompanionMismatch();
+}
+
+void App::WarnCompanionMismatch()
+{
+    if (companionWarned_)
+        return;
+    companionWarned_ = true;
+    const std::wstring extDir = GetStableExtensionDir(false);
+    QP_LOG_WARN(L"companion version mismatch: ext=%s app=%s — Reload unpacked from %s",
+                companionVersion_.c_str(), PeVersionXyz().c_str(), extDir.c_str());
+    std::wstring msg = L"This app is v";
+    msg += PeVersionXyz();
+    msg += L" but the Chrome companion is v";
+    msg += companionVersion_.empty() ? L"(unknown)" : companionVersion_;
+    msg += L".\n\nReload the unpacked extension so they match:\n"
+           L"  chrome://extensions  →  QiuckPrompts Companion  →  Reload\n\n"
+           L"Load unpacked from:\n  ";
+    msg += extDir.empty() ? L"%LOCALAPPDATA%\\QiuckPrompts\\extension" : extDir;
+    MessageBoxW(hwnd_, msg.c_str(), QP_APP_DISPLAY_W, MB_OK | MB_ICONWARNING);
 }
 
 DWORD WINAPI App::WorkThreadMain(void* self)
@@ -445,6 +508,13 @@ void App::ShowAbout()
         cfg_.workflow.preferExtension
             ? (ExtBridge::Instance().IsExtensionReady() ? L"connected" : L"prefer (not connected)")
             : L"disabled";
+    if (cfg_.workflow.preferExtension && !companionVersion_.empty())
+    {
+        text += L" v";
+        text += companionVersion_;
+        if (!CompanionVersionMatches(companionVersion_))
+            text += L"  (mismatch — Reload unpacked)";
+    }
     text += L"\n\nData: ";
     text += GetAppDataDir(false);
     text += L"\nConfig: ";
@@ -715,6 +785,12 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
         err.clear();
     }
 
+    if (cfg_.workflow.preferExtension)
+    {
+        SetTimer(hwnd_, kCompanionVerTimerId, 2000, nullptr);
+        QP_LOG_INFO(L"companion version check armed (every 2s, max %d)", kCompanionVerMaxTries);
+    }
+
     // Named shutdown event → PostMessage(WM_CLOSE) when another build takes over.
     if (!single_.StartShutdownWatcher(hwnd_, &err))
     {
@@ -808,6 +884,8 @@ int App::RunSelfTest()
     expect(ac.hotkeyReleaseTimeoutMs > 0, L"release timeout default");
     expect(ac.logLevel == LogLevel::Info, L"default log level Info");
     expect(App::WM_QP_WORK_DONE >= WM_APP, L"WM_QP_WORK_DONE in WM_APP range");
+    expect(CompanionVersionMatches(PeVersionXyz()), L"companion match self");
+    expect(!CompanionVersionMatches(L"9.9.9"), L"companion mismatch other");
 
     expect(IsHttpsUrl(L"https://www.meta.ai/"), L"IsHttpsUrl meta");
     expect(IsHttpsUrl(L"HTTPS://gemini.google.com/app"), L"IsHttpsUrl case");

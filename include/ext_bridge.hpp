@@ -39,6 +39,7 @@ public:
                          std::wstring* detail, std::wstring* error = nullptr,
                          bool cancelOnFocusSwitch = true);
 
+    bool Ping(DWORD timeoutMs, std::string* versionOut);
     bool Ping(DWORD timeoutMs = 1500);
 
 private:

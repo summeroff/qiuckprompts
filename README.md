@@ -270,6 +270,7 @@ Lines are tagged `TITLE_SAMPLE` with stable `where=` fields.
 - Chrome does **not** expose the chat box as a Win32 `HWND`. Prefer the **MV3 companion** (DOM); readiness otherwise uses the **UI Automation** tree plus the tab title.
 - Hotkeys **arm on press** and **run on release** so Ctrl/Alt are up before Select-all/Copy/Paste.
 - Send-to-AI / insert-only run on a **worker thread**; the tray message loop stays responsive. COM/UIA is initialized per-thread.
+- After app update, **Reload** the unpacked companion if the tray warns that versions differ.
 - Hidden top-level HWND (not `HWND_MESSAGE`) so a second launch can FindWindow + take over.
 - Binding `url=` and `update_url=` must be `https://`. The updater refuses HTTPS→HTTP redirects.
 

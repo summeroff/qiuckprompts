@@ -49,7 +49,12 @@ private:
     bool QueueHotkeyWork(const HotkeyBinding& binding);
     void RunHotkeyWork(const HotkeyBinding& binding);
     void OnWorkDone();
+    void MaybeCheckCompanionVersion();
+    void WarnCompanionMismatch();
     static DWORD WINAPI WorkThreadMain(void* self);
+
+    static constexpr UINT_PTR kCompanionVerTimerId = 2;
+    static constexpr int kCompanionVerMaxTries = 30;
 
     HINSTANCE instance_ = nullptr;
     HWND hwnd_ = nullptr;
@@ -71,6 +76,11 @@ private:
     std::wstring workErr_;
     std::wstring workTemplateId_;
     std::atomic<bool> workStopping_{false};
+
+    int companionVerTries_ = 0;
+    bool companionChecked_ = false;
+    bool companionWarned_ = false;
+    std::wstring companionVersion_;
 };
 
 } // namespace qp

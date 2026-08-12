@@ -45,3 +45,22 @@
 // Stable unpacked-extension id (manifest "key"); keep in sync with extension/manifest.json.
 #define QP_EXTENSION_ID "aodehlngahndannepofbddnacfaldmih"
 #define QP_EXTENSION_ID_W L"aodehlngahndannepofbddnacfaldmih"
+
+#include <string>
+
+namespace qp
+{
+
+// PE / companion lockstep identity (Chrome-safe X.Y.Z, no +g / -b1).
+inline std::wstring PeVersionXyz()
+{
+    return std::to_wstring(QP_VERSION_MAJOR) + L"." + std::to_wstring(QP_VERSION_MINOR) + L"." +
+           std::to_wstring(QP_VERSION_PATCH);
+}
+
+inline bool CompanionVersionMatches(const std::wstring& extVer)
+{
+    return extVer == PeVersionXyz();
+}
+
+} // namespace qp
