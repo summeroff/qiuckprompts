@@ -42,6 +42,10 @@ std::string WideToUtf8(const std::wstring& wide);
 std::wstring Trim(const std::wstring& s);
 std::wstring ToLower(const std::wstring& s);
 
+// True iff url is https:// with a non-empty host. No DNS. Rejects http, file,
+// javascript, and empty/whitespace hosts.
+bool IsHttpsUrl(const std::wstring& url);
+
 // Hotkey
 struct HotkeySpec
 {

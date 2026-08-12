@@ -172,7 +172,7 @@ bool HttpOpenGet(const std::wstring& url, HttpSession& hs, std::wstring* error)
         return false;
     }
 
-    DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
     WinHttpSetOption(hs.req, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect));
 
     if (!WinHttpSendRequest(hs.req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0,
@@ -474,6 +474,14 @@ bool CheckForUpdates(const std::wstring& feedUrl, UpdateCheckResult& out, std::w
     // strip trailing slash for join
     while (!feed.empty() && (feed.back() == L'/' || feed.back() == L'\\'))
         feed.pop_back();
+    if (!IsHttpsUrl(feed))
+    {
+        out.ok = false;
+        out.detail = L"update feed must use HTTPS: " + feed;
+        if (error)
+            *error = out.detail;
+        return false;
+    }
 
     const std::wstring jsonUrl = JoinUrl(feed, L"releases.win.json");
     QP_LOG_INFO(L"updater: fetching %s", jsonUrl.c_str());

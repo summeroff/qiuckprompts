@@ -408,6 +408,26 @@ std::wstring Trim(const std::wstring& s)
     return s.substr(b, e - b);
 }
 
+bool IsHttpsUrl(const std::wstring& url)
+{
+    const std::wstring s = Trim(url);
+    constexpr wchar_t kPrefix[] = L"https://";
+    constexpr size_t kPrefixLen = 8;
+    if (s.size() <= kPrefixLen)
+        return false;
+    if (_wcsnicmp(s.c_str(), kPrefix, kPrefixLen) != 0)
+        return false;
+    for (wchar_t c : s)
+    {
+        if (c < 32 || c == L' ' || c == L'\t')
+            return false;
+    }
+    const wchar_t host0 = s[kPrefixLen];
+    if (host0 == L'/' || host0 == L'\\' || host0 == L'?' || host0 == L'#')
+        return false;
+    return true;
+}
+
 std::wstring ToLower(const std::wstring& s)
 {
     std::wstring out = s;

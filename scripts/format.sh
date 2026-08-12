@@ -9,9 +9,10 @@ case "${1:-}" in
   --check|-n|--dry-run) CHECK=1 ;;
 esac
 
-CF="${CLANG_FORMAT:-clang-format}"
-if ! command -v "$CF" >/dev/null 2>&1; then
-  for c in clang-format-18 clang-format-17 clang-format-16 clang-format-15; do
+CF="${CLANG_FORMAT:-}"
+if [[ -z "$CF" ]] || ! command -v "$CF" >/dev/null 2>&1; then
+  CF=""
+  for c in clang-format-18 clang-format clang-format-17 clang-format-16 clang-format-15; do
     if command -v "$c" >/dev/null 2>&1; then CF="$c"; break; fi
   done
 fi

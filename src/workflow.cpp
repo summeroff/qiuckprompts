@@ -182,6 +182,8 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
     const std::wstring url = !req.aiUrl.empty() ? req.aiUrl : cfg_.defaultAiUrl;
     if (url.empty())
         return fail(L"AI URL is empty");
+    if (!IsHttpsUrl(url))
+        return fail(L"AI URL must be https:// (got: " + url + L")");
     if (req.promptBody.empty())
         return fail(L"prompt template is empty");
 
@@ -255,8 +257,9 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
         {
             return fail(error && !error->empty() ? *error : L"clipboard read failed");
         }
-        QP_LOG_INFO(L"workflow: captured text (%zu wchar) preview='%s'", editorText.size(),
-                    PayloadPreview(editorText, 80).c_str());
+        QP_LOG_INFO(L"workflow: captured text (%zu wchar)", editorText.size());
+        QP_LOG_DEBUG(L"workflow: captured text preview='%s'",
+                     PayloadPreview(editorText, 80).c_str());
     } else
     {
         QP_LOG_INFO(L"workflow: skip editor capture");

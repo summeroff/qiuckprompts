@@ -458,7 +458,13 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
         if (!get(L"fence_editor_text").empty())
             cfg.workflow.fenceEditorText = get(L"fence_editor_text") != L"0";
         if (!get(L"default_ai_url").empty())
-            cfg.workflow.defaultAiUrl = get(L"default_ai_url");
+        {
+            const std::wstring u = Trim(get(L"default_ai_url"));
+            if (IsHttpsUrl(u))
+                cfg.workflow.defaultAiUrl = u;
+            else
+                QP_LOG_WARN(L"config: default_ai_url is not https — ignored");
+        }
         if (!get(L"prefer_extension").empty())
             cfg.workflow.preferExtension = get(L"prefer_extension") != L"0";
         if (!get(L"paste_even_if_not_ready").empty())
@@ -471,7 +477,13 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
         if (!get(L"extension_id").empty())
             cfg.extensionId = Trim(get(L"extension_id"));
         if (!get(L"update_url").empty())
-            cfg.updateUrl = Trim(get(L"update_url"));
+        {
+            const std::wstring u = Trim(get(L"update_url"));
+            if (IsHttpsUrl(u))
+                cfg.updateUrl = u;
+            else
+                QP_LOG_WARN(L"config: update_url is not https — ignored");
+        }
         if (!get(L"start_with_windows").empty())
             cfg.startWithWindows = get(L"start_with_windows") != L"0";
     }
@@ -493,7 +505,7 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
         b.templateId = name;
         b.label = get(L"label").empty() ? name : get(L"label");
         b.service = get(L"service");
-        b.aiUrl = get(L"url");
+        b.aiUrl = Trim(get(L"url"));
         b.pageTitleHint = get(L"title_hint");
         b.action = ActionKind::SendToAi;
 
@@ -574,6 +586,11 @@ bool LoadConfigFile(const std::wstring& pathOrEmpty, AppConfig& cfg, std::wstrin
 
         if (b.aiUrl.empty())
             b.aiUrl = cfg.workflow.defaultAiUrl;
+        if (!IsHttpsUrl(b.aiUrl))
+        {
+            QP_LOG_WARN(L"config: [%s] url is not https — skip", name.c_str());
+            continue;
+        }
 
         QP_LOG_INFO(
             L"config: binding [%s] %s service=%s url=%s image=%d capture=%d prompt=%zu wchar",
@@ -675,6 +692,12 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         }
         if (TakeEqValue(i, argc, argv, arg, L"--ai-url", v))
         {
+            if (!IsHttpsUrl(v))
+            {
+                if (error)
+                    *error = L"--ai-url must be https://...";
+                return false;
+            }
             cfg.workflow.defaultAiUrl = v;
             continue;
         }
@@ -711,6 +734,12 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         }
         if (TakeEqValue(i, argc, argv, arg, L"--update-url", v))
         {
+            if (!IsHttpsUrl(v))
+            {
+                if (error)
+                    *error = L"--update-url must be https://...";
+                return false;
+            }
             cfg.updateUrl = v;
             continue;
         }
