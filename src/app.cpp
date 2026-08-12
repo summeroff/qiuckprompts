@@ -512,8 +512,19 @@ int App::Run(HINSTANCE instance, int argc, wchar_t** argv)
                 cfg_.startWithWindows = false;
                 cliForceAutostartOff = true;
             }
+            const std::wstring arg = argv[i];
+            const std::wstring logPref = L"--log-level=";
+            if (arg.rfind(logPref, 0) == 0)
+            {
+                cfg_.logLevel = Logger::ParseLevel(arg.substr(logPref.size()));
+            } else if (arg == L"--log-level" && i + 1 < argc && argv[i + 1])
+            {
+                cfg_.logLevel = Logger::ParseLevel(argv[++i]);
+            }
         }
     }
+    Logger::Instance().SetLevel(cfg_.logLevel);
+    QP_LOG_INFO(L"log level effective=%s", Logger::LevelName(cfg_.logLevel));
 
     // Autostart (HKCU Run):
     //  - CLI --start-with-windows / --no-start-with-windows always apply
@@ -667,6 +678,10 @@ int App::RunSelfTest()
     expect(!IsHttpsUrl(L"javascript:alert(1)"), L"IsHttpsUrl rejects javascript");
     expect(!IsHttpsUrl(L"file:///c:/x"), L"IsHttpsUrl rejects file");
     expect(!IsHttpsUrl(L"https://"), L"IsHttpsUrl rejects empty host");
+    expect(!IsHttpsUrl(L"https://:443/path"), L"IsHttpsUrl rejects empty host :443");
+    expect(!IsHttpsUrl(L" https://www.meta.ai/"), L"IsHttpsUrl rejects leading space");
+    expect(!IsHttpsUrl(L"https://www.meta.ai/ "), L"IsHttpsUrl rejects trailing space");
+    expect(IsHttpsUrl(L"https://[::1]/"), L"IsHttpsUrl ipv6");
     expect(!IsHttpsUrl(L""), L"IsHttpsUrl empty");
 
     {
@@ -680,6 +695,12 @@ int App::RunSelfTest()
                              const_cast<wchar_t*>(L"--ai-url=https://gemini.google.com/app")};
         expect(ParseCommandLine(2, fakeOk, cli, &e) && IsHttpsUrl(cli.workflow.defaultAiUrl),
                L"ParseCommandLine accepts https --ai-url");
+        e.clear();
+        wchar_t* fakePad[] = {const_cast<wchar_t*>(L"qiuckprompts.exe"),
+                              const_cast<wchar_t*>(L"--ai-url= https://gemini.google.com/app")};
+        expect(ParseCommandLine(2, fakePad, cli, &e) &&
+                   cli.workflow.defaultAiUrl == L"https://gemini.google.com/app",
+               L"ParseCommandLine trims padded --ai-url");
     }
 
     WorkflowConfig wc;

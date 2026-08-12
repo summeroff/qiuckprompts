@@ -692,13 +692,14 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         }
         if (TakeEqValue(i, argc, argv, arg, L"--ai-url", v))
         {
-            if (!IsHttpsUrl(v))
+            const std::wstring u = Trim(v);
+            if (!IsHttpsUrl(u))
             {
                 if (error)
                     *error = L"--ai-url must be https://...";
                 return false;
             }
-            cfg.workflow.defaultAiUrl = v;
+            cfg.workflow.defaultAiUrl = u;
             continue;
         }
         if (TakeEqValue(i, argc, argv, arg, L"--browser-hint", v))
@@ -734,13 +735,14 @@ bool ParseCommandLine(int argc, wchar_t** argv, AppConfig& cfg, std::wstring* er
         }
         if (TakeEqValue(i, argc, argv, arg, L"--update-url", v))
         {
-            if (!IsHttpsUrl(v))
+            const std::wstring u = Trim(v);
+            if (!IsHttpsUrl(u))
             {
                 if (error)
                     *error = L"--update-url must be https://...";
                 return false;
             }
-            cfg.updateUrl = v;
+            cfg.updateUrl = u;
             continue;
         }
         if (arg == L"--start-with-windows")

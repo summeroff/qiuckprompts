@@ -50,12 +50,16 @@ struct PipeSecurity
     bool Ok() const { return sd != nullptr; }
 };
 
-std::wstring FileLeaf(const std::wstring& path)
+std::wstring CanonicalPath(const std::wstring& path)
 {
-    const size_t slash = path.find_last_of(L"\\/");
-    if (slash == std::wstring::npos)
+    if (path.empty())
+        return {};
+    wchar_t buf[32768]{};
+    const DWORD n = GetFullPathNameW(path.c_str(), static_cast<DWORD>(sizeof(buf) / sizeof(buf[0])),
+                                     buf, nullptr);
+    if (n == 0 || n >= static_cast<DWORD>(sizeof(buf) / sizeof(buf[0])))
         return path;
-    return path.substr(slash + 1);
+    return buf;
 }
 
 // Named-pipe clients must be this same exe (tray dummy connect or --native-messaging-host).
@@ -75,9 +79,9 @@ bool PipeClientIsSelf(HANDLE pipe)
     CloseHandle(proc);
     if (!ok || img[0] == L'\0')
         return false;
-    const std::wstring want = FileLeaf(GetExePath());
-    const std::wstring got = FileLeaf(img);
-    return !want.empty() && _wcsicmp(want.c_str(), got.c_str()) == 0;
+    const std::wstring want = CanonicalPath(GetExePath());
+    const std::wstring got = CanonicalPath(img);
+    return !want.empty() && !got.empty() && _wcsicmp(want.c_str(), got.c_str()) == 0;
 }
 
 bool ReadExact(HANDLE h, void* buf, DWORD n, DWORD timeoutMs)

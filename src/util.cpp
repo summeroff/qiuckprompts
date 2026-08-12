@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cwctype>
 #include <vector>
 
 namespace qp
@@ -410,20 +411,27 @@ std::wstring Trim(const std::wstring& s)
 
 bool IsHttpsUrl(const std::wstring& url)
 {
-    const std::wstring s = Trim(url);
-    constexpr wchar_t kPrefix[] = L"https://";
+    if (url.empty() || url != Trim(url))
+        return false;
     constexpr size_t kPrefixLen = 8;
-    if (s.size() <= kPrefixLen)
+    if (url.size() <= kPrefixLen)
         return false;
-    if (_wcsnicmp(s.c_str(), kPrefix, kPrefixLen) != 0)
+    if (_wcsnicmp(url.c_str(), L"https://", kPrefixLen) != 0)
         return false;
-    for (wchar_t c : s)
+    for (wchar_t c : url)
     {
         if (c < 32 || c == L' ' || c == L'\t')
             return false;
     }
-    const wchar_t host0 = s[kPrefixLen];
-    if (host0 == L'/' || host0 == L'\\' || host0 == L'?' || host0 == L'#')
+    size_t i = kPrefixLen;
+    const size_t slash = url.find_first_of(L"/?#", i);
+    const size_t at = url.find(L'@', i);
+    if (at != std::wstring::npos && (slash == std::wstring::npos || at < slash))
+        i = at + 1;
+    if (i >= url.size() || (slash != std::wstring::npos && i >= slash))
+        return false;
+    const wchar_t host0 = url[i];
+    if (!(iswalnum(host0) || host0 == L'['))
         return false;
     return true;
 }

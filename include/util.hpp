@@ -42,8 +42,10 @@ std::string WideToUtf8(const std::wstring& wide);
 std::wstring Trim(const std::wstring& s);
 std::wstring ToLower(const std::wstring& s);
 
-// True iff url is https:// with a non-empty host. No DNS. Rejects http, file,
-// javascript, and empty/whitespace hosts.
+// True iff url is already-trimmed https:// with a non-empty hostname.
+// No DNS. Rejects http, file, javascript, outer whitespace, and empty hosts
+// (e.g. https://:443/path). Callers that accept padded input must Trim first
+// and store the trimmed value.
 bool IsHttpsUrl(const std::wstring& url);
 
 // Hotkey
