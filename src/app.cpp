@@ -1009,8 +1009,15 @@ int App::RunSelfTest()
            L"bare gemini host title not ready");
     expect(!TitleLooksLikeReadyAiPage(L"https://gemini.google.com/app - Google Chrome", L"Gemini"),
            L"full gemini url title not ready");
+    // Firefox uses an em-dash suffix; must strip so host-only titles stay not-ready.
+    expect(!TitleLooksLikeReadyAiPage(L"gemini.google.com/app \u2014 Mozilla Firefox", L"Gemini"),
+           L"bare gemini host Firefox em-dash not ready");
+    expect(!TitleLooksLikeReadyAiPage(L"gemini.google.com/app - Mozilla Firefox", L"Gemini"),
+           L"bare gemini host Firefox hyphen not ready");
     expect(TitleLooksLikeReadyAiPage(L"Google Gemini - Google Chrome", L"Gemini"),
            L"Google Gemini title ready");
+    expect(TitleLooksLikeReadyAiPage(L"Google Gemini \u2014 Mozilla Firefox", L"Gemini"),
+           L"Google Gemini Firefox title ready");
     expect(TitleLooksLikeReadyAiPage(L"\u200eGoogle Gemini - Google Chrome", L"Gemini"),
            L"Google Gemini title with LRM ready");
     expect(TitleLooksLikeReadyAiPage(L"Meta AI - Google Chrome", L"Meta"), L"Meta AI title ready");
