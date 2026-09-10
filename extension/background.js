@@ -3,6 +3,11 @@
 import './paste_logic.js';
 
 const HOST = 'com.qiuckprompts.host';
+// MV3 SW timers die when the worker sleeps. chrome.alarms wake the SW so the
+// native port can reconnect after Chrome suspends us (otherwise PE falls back
+// to flaky UIA and Gemini often opens with an empty composer).
+const RECONNECT_ALARM = 'qp-native-reconnect';
+const RECONNECT_PERIOD_MIN = 1; // minimum periodInMinutes for chrome.alarms
 
 function isAllowedAiUrl(url) {
   return globalThis.qpPaste.isAllowedAiUrl(url);
@@ -46,8 +51,31 @@ function connectNative() {
 }
 
 function scheduleReconnect() {
+  // Fast path while SW is still alive.
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(connectNative, 2000);
+  // Durable path: alarm wakes a suspended SW even after setTimeout is gone.
+  try {
+    chrome.alarms.create(RECONNECT_ALARM, { periodInMinutes: RECONNECT_PERIOD_MIN });
+  } catch (e) {
+    log('alarms.create failed', e);
+  }
+}
+
+function ensureReconnectAlarm() {
+  try {
+    chrome.alarms.get(RECONNECT_ALARM, (a) => {
+      if (chrome.runtime.lastError) {
+        log('alarms.get', chrome.runtime.lastError.message);
+        return;
+      }
+      if (!a) {
+        chrome.alarms.create(RECONNECT_ALARM, { periodInMinutes: RECONNECT_PERIOD_MIN });
+      }
+    });
+  } catch (e) {
+    log('ensureReconnectAlarm failed', e);
+  }
 }
 
 function reply(msg, extra) {
@@ -333,6 +361,20 @@ async function onNativeMessage(msg) {
 }
 
 connectNative();
+ensureReconnectAlarm();
 
-chrome.runtime.onStartup.addListener(connectNative);
-chrome.runtime.onInstalled.addListener(connectNative);
+chrome.runtime.onStartup.addListener(() => {
+  connectNative();
+  ensureReconnectAlarm();
+});
+chrome.runtime.onInstalled.addListener(() => {
+  connectNative();
+  ensureReconnectAlarm();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (!alarm || alarm.name !== RECONNECT_ALARM) return;
+  if (port) return; // already connected — leave the port alone
+  log('alarm wake — reconnect native');
+  connectNative();
+});

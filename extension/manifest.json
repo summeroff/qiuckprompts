@@ -8,7 +8,8 @@
     "nativeMessaging",
     "tabs",
     "windows",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.meta.ai/*",

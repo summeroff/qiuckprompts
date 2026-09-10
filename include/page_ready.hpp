@@ -42,6 +42,11 @@ struct PageReadyResult
 // Guess a title substring from the AI URL (meta.ai → "Meta", etc.).
 std::wstring TitleHintFromUrl(const std::wstring& url);
 
+// True when the browser tab title looks like a loaded AI app (not a bare host/URL
+// title such as "gemini.google.com/app - Google Chrome" during navigation).
+// Used by WaitForAiPageReady and unit-tested via --self-test.
+bool TitleLooksLikeReadyAiPage(const std::wstring& title, const std::wstring& hint);
+
 // Poll until the AI page looks ready, or timeout.
 // IMPORTANT: Chrome does NOT expose DOM inputs as Win32 HWNDs. The page lives
 // inside Chrome_RenderWidgetHostHWND. We use:

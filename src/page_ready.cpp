@@ -272,9 +272,12 @@ IUIAutomation* CreateAutomation(std::wstring* error)
     return auto_;
 }
 
+// outEl (optional): on success receives an AddRef'd element the caller must Release.
 bool TryFocusedEdit(IUIAutomation* automation, bool setFocus, std::wstring* editName,
-                    std::wstring* error)
+                    std::wstring* error, IUIAutomationElement** outEl = nullptr)
 {
+    if (outEl)
+        *outEl = nullptr;
     IUIAutomationElement* focused = nullptr;
     HRESULT hr = automation->GetFocusedElement(&focused);
     if (FAILED(hr) || !focused)
@@ -295,6 +298,11 @@ bool TryFocusedEdit(IUIAutomation* automation, bool setFocus, std::wstring* edit
             focused->SetFocus();
         }
         QP_LOG_DEBUG(L"uia: focused element is usable edit name='%s'", name.c_str());
+        if (outEl)
+        {
+            *outEl = focused; // transfer ownership
+            return true;
+        }
     } else
     {
         const int ctype = GetIntProp(focused, UIA_ControlTypePropertyId, 0);
@@ -305,9 +313,12 @@ bool TryFocusedEdit(IUIAutomation* automation, bool setFocus, std::wstring* edit
     return ok;
 }
 
+// outEl (optional): on success receives an AddRef'd element the caller must Release.
 bool TryFindEditInTree(IUIAutomation* automation, HWND hwnd, bool setFocus, std::wstring* editName,
-                       std::wstring* error)
+                       std::wstring* error, IUIAutomationElement** outEl = nullptr)
 {
+    if (outEl)
+        *outEl = nullptr;
     IUIAutomationElement* root = nullptr;
     HRESULT hr = automation->ElementFromHandle(hwnd, &root);
     if (FAILED(hr) || !root)
@@ -416,13 +427,85 @@ bool TryFindEditInTree(IUIAutomation* automation, HWND hwnd, bool setFocus, std:
         QP_LOG_DEBUG(L"uia: found edit name='%s' (no focus)", name.c_str());
     }
 
+    if (outEl)
+    {
+        *outEl = edit; // transfer ownership
+        return true;
+    }
     edit->Release();
     return true;
+}
+
+bool IsBrowserChromeSuffix(const std::wstring& suffixLower)
+{
+    if (suffixLower.empty())
+        return false;
+    if (suffixLower.find(L"chrome") != std::wstring::npos)
+        return true;
+    if (suffixLower.find(L"chromium") != std::wstring::npos)
+        return true;
+    if (suffixLower.find(L"edge") != std::wstring::npos)
+        return true;
+    if (suffixLower == L"brave")
+        return true;
+    // Firefox: "Mozilla Firefox", "Firefox", "Firefox Developer Edition", …
+    if (suffixLower.find(L"firefox") != std::wstring::npos)
+        return true;
+    if (suffixLower.find(L"mozilla") != std::wstring::npos)
+        return true;
+    return false;
+}
+
+// Strip browser chrome suffix (" - Google Chrome", " — Mozilla Firefox") and LRM/bom junk.
+std::wstring PageTitleCore(const std::wstring& title)
+{
+    std::wstring t = Trim(title);
+    while (!t.empty() && (t[0] == L'\u200e' || t[0] == L'\u200f' || t[0] == L'\ufeff'))
+        t.erase(t.begin());
+    t = Trim(t);
+
+    // Chromium uses " - "; Firefox often uses an em-dash " — " (U+2014) or en-dash " – ".
+    const wchar_t* seps[] = {L" - ", L" \u2014 ", L" \u2013 "};
+    for (const wchar_t* sep : seps)
+    {
+        const size_t dash = t.rfind(sep);
+        if (dash == std::wstring::npos)
+            continue;
+        const size_t sepLen = wcslen(sep);
+        const std::wstring suffix = ToLowerCopy(Trim(t.substr(dash + sepLen)));
+        if (IsBrowserChromeSuffix(suffix))
+        {
+            t = Trim(t.substr(0, dash));
+            break;
+        }
+    }
+    return t;
+}
+
+// Navigation-in-progress titles are often just the host/path (or full URL).
+// Those still contain the service hint ("gemini" in gemini.google.com) — reject them.
+bool LooksLikeBareUrlOrHostTitle(const std::wstring& title)
+{
+    const std::wstring core = PageTitleCore(title);
+    if (core.empty())
+        return true;
+    const std::wstring l = ToLowerCopy(core);
+    if (l.find(L"://") != std::wstring::npos)
+        return true;
+    // No spaces + has a dot → host or host/path (gemini.google.com/app).
+    if (core.find(L' ') == std::wstring::npos && l.find(L'.') != std::wstring::npos)
+        return true;
+    // "www.meta.ai" style with spaces rare; still catch leading www.
+    if (l.rfind(L"www.", 0) == 0)
+        return true;
+    return false;
 }
 
 bool TitleLooksReady(const std::wstring& title, const std::wstring& hint)
 {
     if (LooksLikeNewTabTitle(title))
+        return false;
+    if (LooksLikeBareUrlOrHostTitle(title))
         return false;
     if (!hint.empty() && !ContainsI(title, hint))
         return false;
@@ -430,6 +513,11 @@ bool TitleLooksReady(const std::wstring& title, const std::wstring& hint)
 }
 
 } // namespace
+
+bool TitleLooksLikeReadyAiPage(const std::wstring& title, const std::wstring& hint)
+{
+    return TitleLooksReady(title, hint);
+}
 
 bool EnsureComInitialized()
 {
@@ -517,6 +605,22 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
     std::wstring prevLoggedTitle;
     int lastTreeScanMs = -10000;
     int lastTitleLogMs = -10000;
+    // Require the *same* UIA element on consecutive polls — Gemini/Meta shells
+    // often expose a transient edit that is replaced on hydrate (paste then vanishes).
+    // Compare by IUIAutomation::CompareElements, not name alone (SPA can reuse names).
+    IUIAutomationElement* lastEditEl = nullptr;
+    int editStreak = 0;
+    const int needEditStable = 2;
+
+    auto releaseLastEdit = [&]() {
+        if (lastEditEl)
+        {
+            lastEditEl->Release();
+            lastEditEl = nullptr;
+        }
+        editStreak = 0;
+        editReady = false;
+    };
 
     // Initial title at wait start
     LogTitleSample(L"page_ready_start", cfg.browserHwnd, cfg.titleHint);
@@ -528,6 +632,7 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
 
         if (!IsWindow(cfg.browserHwnd))
         {
+            releaseLastEdit();
             if (automation)
                 automation->Release();
             if (error)
@@ -541,6 +646,7 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
                 FocusSwitchCancelReason(cfg.browserHwnd, cfg.titleHint, sawTargetTitle);
             if (!focusErr.empty())
             {
+                releaseLastEdit();
                 if (automation)
                     automation->Release();
                 out.ready = false;
@@ -572,29 +678,63 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
             lastTitleLogMs = elapsed;
         }
 
-        if (titleReady && automation)
+        if (!titleReady)
+        {
+            releaseLastEdit();
+        } else if (automation)
         {
             std::wstring name;
+            IUIAutomationElement* el = nullptr;
+            bool found = false;
+            bool fromFocus = false;
+            bool didTreeScan = false;
             // Cheap path first: whatever currently has focus.
             if (cfg.preferFocusedEdit &&
-                TryFocusedEdit(automation, cfg.focusFoundEdit, &name, nullptr))
+                TryFocusedEdit(automation, cfg.focusFoundEdit, &name, nullptr, &el))
             {
-                editReady = true;
-                out.focusedEdit = true;
-                out.usedUia = true;
-                out.editName = name;
+                found = true;
+                fromFocus = true;
             } else if (elapsed - lastTreeScanMs >= 400)
             {
                 // Full tree scan is expensive on Chrome — throttle it.
                 lastTreeScanMs = elapsed;
+                didTreeScan = true;
                 if (TryFindEditInTree(automation, cfg.browserHwnd, cfg.focusFoundEdit, &name,
-                                      nullptr))
+                                      nullptr, &el))
                 {
-                    editReady = true;
-                    out.usedUia = true;
-                    out.editName = name;
+                    found = true;
                 }
             }
+
+            if (found && el)
+            {
+                BOOL same = FALSE;
+                if (lastEditEl && SUCCEEDED(automation->CompareElements(lastEditEl, el, &same)) &&
+                    same)
+                {
+                    ++editStreak;
+                    el->Release();
+                    el = nullptr;
+                } else
+                {
+                    if (lastEditEl)
+                        lastEditEl->Release();
+                    lastEditEl = el; // take ownership
+                    el = nullptr;
+                    editStreak = 1;
+                }
+                out.editName = name;
+                out.usedUia = true;
+                out.focusedEdit = fromFocus;
+                editReady = editStreak >= needEditStable;
+            } else if (didTreeScan)
+            {
+                // Tree scan ran and found nothing — reset. (Do not reset on throttled skips
+                // or on a failed focus probe when we did not scan the tree this tick.)
+                releaseLastEdit();
+            }
+            if (el)
+                el->Release();
         }
 
         const bool minElapsed = elapsed >= cfg.minWaitMs;
@@ -638,6 +778,8 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
 
         Sleep(static_cast<DWORD>(cfg.pollMs > 0 ? cfg.pollMs : 100));
     }
+
+    releaseLastEdit();
 
     if (automation)
         automation->Release();
