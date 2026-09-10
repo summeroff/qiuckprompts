@@ -709,8 +709,8 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
             if (found && el)
             {
                 BOOL same = FALSE;
-                if (lastEditEl &&
-                    SUCCEEDED(automation->CompareElements(lastEditEl, el, &same)) && same)
+                if (lastEditEl && SUCCEEDED(automation->CompareElements(lastEditEl, el, &same)) &&
+                    same)
                 {
                     ++editStreak;
                     el->Release();
