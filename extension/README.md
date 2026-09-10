@@ -40,6 +40,10 @@ via **native messaging**. No AI API keys — it drives pages you already use.
 
 - Tray log should show `ext_bridge: native-host client connected` after the extension loads.
 - Hotkey workflow prefers the extension when connected; falls back to UIA if not.
+- MV3 service workers sleep. The background uses `chrome.alarms` (~1 min) to
+  reconnect native messaging after suspend — without that, PE silently uses UIA
+  and Gemini cold-open often leaves an empty composer. After update: **Reload**
+  unpacked (and accept the new `alarms` permission if Chrome prompts).
 
 ## Commands (native ↔ extension)
 

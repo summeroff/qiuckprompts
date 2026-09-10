@@ -314,9 +314,11 @@ bool AiWorkflow::Run(const WorkflowRequest& req, std::wstring* error)
             return fail(L"extension paste cancelled: " + why);
         }
         QP_LOG_WARN(L"workflow: extension path failed (%s) — falling back to UIA", why.c_str());
-    } else if (cfg_.preferExtension)
+    } else if (cfg_.preferExtension && !req.requireClipboardImage)
     {
-        QP_LOG_DEBUG(L"workflow: extension not connected — UIA path");
+        // INFO so missing companion is visible (Gemini UIA cold-open is flaky without it).
+        QP_LOG_WARN(L"workflow: Chrome companion not connected — UIA fallback "
+                    L"(Reload unpacked QiuckPrompts extension if paste is empty)");
     }
 
     BrowserTarget browser;

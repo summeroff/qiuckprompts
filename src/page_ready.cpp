@@ -420,9 +420,51 @@ bool TryFindEditInTree(IUIAutomation* automation, HWND hwnd, bool setFocus, std:
     return true;
 }
 
+// Strip browser chrome suffix (" - Google Chrome") and LRM/bom junk.
+std::wstring PageTitleCore(const std::wstring& title)
+{
+    std::wstring t = Trim(title);
+    while (!t.empty() && (t[0] == L'\u200e' || t[0] == L'\u200f' || t[0] == L'\ufeff'))
+        t.erase(t.begin());
+    t = Trim(t);
+    const size_t dash = t.rfind(L" - ");
+    if (dash != std::wstring::npos)
+    {
+        const std::wstring suffix = ToLowerCopy(Trim(t.substr(dash + 3)));
+        if (suffix.find(L"chrome") != std::wstring::npos ||
+            suffix.find(L"edge") != std::wstring::npos ||
+            suffix.find(L"chromium") != std::wstring::npos || suffix == L"brave")
+        {
+            t = Trim(t.substr(0, dash));
+        }
+    }
+    return t;
+}
+
+// Navigation-in-progress titles are often just the host/path (or full URL).
+// Those still contain the service hint ("gemini" in gemini.google.com) — reject them.
+bool LooksLikeBareUrlOrHostTitle(const std::wstring& title)
+{
+    const std::wstring core = PageTitleCore(title);
+    if (core.empty())
+        return true;
+    const std::wstring l = ToLowerCopy(core);
+    if (l.find(L"://") != std::wstring::npos)
+        return true;
+    // No spaces + has a dot → host or host/path (gemini.google.com/app).
+    if (core.find(L' ') == std::wstring::npos && l.find(L'.') != std::wstring::npos)
+        return true;
+    // "www.meta.ai" style with spaces rare; still catch leading www.
+    if (l.rfind(L"www.", 0) == 0)
+        return true;
+    return false;
+}
+
 bool TitleLooksReady(const std::wstring& title, const std::wstring& hint)
 {
     if (LooksLikeNewTabTitle(title))
+        return false;
+    if (LooksLikeBareUrlOrHostTitle(title))
         return false;
     if (!hint.empty() && !ContainsI(title, hint))
         return false;
@@ -430,6 +472,11 @@ bool TitleLooksReady(const std::wstring& title, const std::wstring& hint)
 }
 
 } // namespace
+
+bool TitleLooksLikeReadyAiPage(const std::wstring& title, const std::wstring& hint)
+{
+    return TitleLooksReady(title, hint);
+}
 
 bool EnsureComInitialized()
 {
@@ -517,6 +564,11 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
     std::wstring prevLoggedTitle;
     int lastTreeScanMs = -10000;
     int lastTitleLogMs = -10000;
+    // Require the same promising edit on consecutive polls — Gemini/Meta shells
+    // often expose a transient edit that is replaced on hydrate (paste then vanishes).
+    std::wstring lastEditKey;
+    int editStreak = 0;
+    const int needEditStable = 2;
 
     // Initial title at wait start
     LogTitleSample(L"page_ready_start", cfg.browserHwnd, cfg.titleHint);
@@ -572,17 +624,22 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
             lastTitleLogMs = elapsed;
         }
 
-        if (titleReady && automation)
+        if (!titleReady)
+        {
+            lastEditKey.clear();
+            editStreak = 0;
+            editReady = false;
+        } else if (automation)
         {
             std::wstring name;
+            bool found = false;
+            bool fromFocus = false;
             // Cheap path first: whatever currently has focus.
             if (cfg.preferFocusedEdit &&
                 TryFocusedEdit(automation, cfg.focusFoundEdit, &name, nullptr))
             {
-                editReady = true;
-                out.focusedEdit = true;
-                out.usedUia = true;
-                out.editName = name;
+                found = true;
+                fromFocus = true;
             } else if (elapsed - lastTreeScanMs >= 400)
             {
                 // Full tree scan is expensive on Chrome — throttle it.
@@ -590,10 +647,31 @@ bool WaitForAiPageReady(const PageReadyConfig& cfg, PageReadyResult& out, std::w
                 if (TryFindEditInTree(automation, cfg.browserHwnd, cfg.focusFoundEdit, &name,
                                       nullptr))
                 {
-                    editReady = true;
-                    out.usedUia = true;
-                    out.editName = name;
+                    found = true;
                 }
+            }
+
+            if (found)
+            {
+                // Key on name + focus source so a nameless shell ≠ real composer.
+                const std::wstring key = name + L"|" + (fromFocus ? L"f" : L"t");
+                if (!key.empty() && key == lastEditKey)
+                    ++editStreak;
+                else
+                {
+                    lastEditKey = key;
+                    editStreak = 1;
+                }
+                out.editName = name;
+                out.usedUia = true;
+                out.focusedEdit = fromFocus;
+                editReady = editStreak >= needEditStable;
+            } else if (elapsed - lastTreeScanMs >= 400)
+            {
+                // No edit this expensive tick — reset streak (don't reset on throttled skips).
+                lastEditKey.clear();
+                editStreak = 0;
+                editReady = false;
             }
         }
 
